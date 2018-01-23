@@ -54,6 +54,19 @@ CREATE TABLE #Result
 		PolEnd_No CHAR(6)  NOT NULL,
   		endos_seq int NULL,
 		IsPolicy bit  NOT NULL,
+
+		position CHAR(5),
+		position_name VARCHAR(100),
+		addno varchar(20),
+		building varchar(40),
+		village varchar(50),
+		street varchar(40),
+		trog varchar(40),
+		soi varchar(40),
+		tumbol varchar(40),
+		zipcode char(5),
+		country char(3),
+
 		net_premium float NULL,
 		stamp float NULL,
 		vat float NULL,
@@ -97,6 +110,8 @@ CREATE TABLE #tempPolicy
 CREATE CLUSTERED INDEX i_tempResult
 ON #tempPolicy (pol_yr,pol_br,pol_pre,pol_no,endos_seq);
 
+select pol_yr, pol_br, pol_pre, pol_no, count(1) from #tempPolicy group by pol_yr, pol_br, pol_pre, pol_no having count(1) > 1 order by pol_yr, pol_br, pol_pre, pol_no
+
 DECLARE @Year12 CHAR(2)
 DECLARE @Year13 CHAR(2)
 DECLARE @Year14 CHAR(2)
@@ -122,6 +137,8 @@ and h.pol_br  <= @BranchTo
 and h.endos_seq = 0  
 and (( convert(varchar(10) , h.start_datetime ,111 ) between  @StartDateFrom  and @StartDateTo))
 
+select * from #tempPolicy
+
 INSERT INTO #Result 
     (
 	  MainClass,
@@ -135,7 +152,22 @@ INSERT INTO #Result
       PolEnd_Pre,
       PolEnd_No,
 	  endos_seq,
-      IsPolicy				        
+      IsPolicy,
+
+	  position,
+		position_name,
+		addno,
+		building,
+		village,
+		street,
+		trog,
+		soi,
+		tumbol,
+		zipcode,
+		country,
+		InsuredName,
+		Seq,
+		InsuredCitizenId			        
 		)
 select p.class_oic,
        p.sale_code+'-'+p.pol_yr+p.pol_br+'/POL/'+p.pol_no+'-'+p.pol_pre,
@@ -148,9 +180,31 @@ select p.class_oic,
        p.pol_pre,
        p.pol_no,
 	   p.endos_seq,
-       1
+       1, 
+	   ins.ins_position,
+		ins.ins_position_name,
+		ins.ins_addno,
+		ins.ins_building,
+		ins.ins_village,
+		ins.ins_street,
+		ins.ins_trog,
+		ins.ins_soi,
+		ins.ins_tumbol,
+		ins.ins_zipcode,
+		ins.ins_country,
+		
+		ins.ins_fname + ins.ins_lname,
+		ins.ins_seq,
+		ins.ins_idno
+
 FROM #tempPolicy p
-inner join 
+inner join his_insured ins WITH(NOLOCK) on 
+							(p.pol_yr= ins.pol_yr and
+								p.pol_br = ins.pol_br and
+								p.pol_pre = ins.pol_pre and
+								p.pol_no = ins.pol_no and
+								p.endos_seq = ins.endos_seq
+							)
 
 
 UPDATE  #Result
@@ -172,32 +226,22 @@ where (#Result.PolEnd_Yr = h.pol_yr and
 
 -- Update Seq,RelationHolderInsured
 UPDATE  #Result
-SET Seq = ins.ins_seq,
-InsuredCitizenId=ins.ins_idno,
+SET 
 OccupationCode=  (
-					case when isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',ins.ins_position ),'9999') =  '' then 
-							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position',ins.ins_position_name ,''),'9999')
+					case when isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999') =  '' then 
+							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position',position_name ,''),'9999')
 						else  
-							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',ins.ins_position ),'9999')  
+							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')  
 					end
 				)
-FROM
-his_insured ins  WITH(NOLOCK) 
-where
-#Result.PolEnd_Yr= ins.pol_yr and
-#Result.PolEnd_Br = ins.pol_br and
-#Result.PolEnd_Pre = ins.pol_pre and
-#Result.PolEnd_No = ins.pol_no and
-#Result.endos_seq = ins.endos_seq
+
 
 select * from #Result
 select * 
 from his_insured
 where
 pol_yr = '12' and
-pol_br = '003' and
 pol_pre = '533' and
-pol_no = '000013' and
 endos_seq = '0'
 
 select isnull(centerdb.dbo.cnudf_GetMasterOic('','position','','30116' ),'9999')
@@ -205,44 +249,43 @@ select isnull(centerdb.dbo.cnudf_GetMasterOic('','position','','30116' ),'9999')
 --EXEC tempdb.dbo.sp_help N'#tempPolicy';
 
 -- Update Address his_insured
-UPDATE  #tempPolicy
-SET InsuredAddress = Case  #tempPolicy.flag_language     ---- Eng ------------------------------------------
+UPDATE  #Result
+SET InsuredAddress = Case  #Result.flag_language     ---- Eng ------------------------------------------
 			  						When 'E' Then
 									  		Ltrim(
-													(CASE isnull(ins.ins_addno, '')    WHEN ''  THEN '' ElSE ins.ins_addno+' ' END) + 
-													(CASE isnull(ins.ins_building, '') WHEN ''  THEN '' ELSE ins.ins_building+' Bld., ' END) + 
-													(CASE isnull(ins.ins_village, '')  WHEN ''  THEN '' ELSE ins.ins_village+' village, ' END) + 
-													(CASE isnull(ins.ins_street, '')   WHEN ''  THEN '' ELSE ins.ins_street+' Rd., ' END) + 
-													(CASE isnull(ins.ins_trog, '')     WHEN ''  THEN '' ELSE ins.ins_trog+', ' END) + 
-													(CASE isnull(ins.ins_soi, '')      WHEN ''  THEN '' ELSE ins.ins_soi+', ' END)
+													(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+' ' END) + 
+													(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' Bld., ' END) + 
+													(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+' village, ' END) + 
+													(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' Rd., ' END) + 
+													(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+', ' END) + 
+													(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+', ' END)
 												)
 					ELSE
-				 		CASE ins.ins_country WHEN '764' THEN 
+				 		CASE #Result.country WHEN '764' THEN 
 										Ltrim(
-															(CASE isnull(ins.ins_addno, '') WHEN 	'-' THEN '' WHEN 	'' THEN ''  ELSE 'เลขที่ '  + ins.ins_addno END)
-															+ (CASE isnull(ins.ins_building, '') WHEN '' THEN '' ELSE ' ' + ins.ins_building END) 
-															+ (CASE isnull(ins.ins_village, '') WHEN '' THEN '' ELSE ' ' + ins.ins_village END) + 
-															(CASE isnull(ins.ins_street, '') WHEN '' THEN '' ELSE ' ถ.' + ins.ins_street END) + 
-															(CASE isnull(ins.ins_trog, '') WHEN '' THEN '' ELSE ' ตรอก' + ins.ins_trog END) 
-															+ (CASE isnull(ins.ins_soi, '') WHEN '' THEN '' ELSE ' ซ.' + ins.ins_soi END)
+														(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+'เลขที่ ' END) + 
+														(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' ' END) + 
+														(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+'  ' END) + 
+														(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' ถ.' END) + 
+														(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+' ตรอก' END) + 
+														(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+' ซ.' END)
 														) 
 						ELSE
 							Ltrim(
-									 (CASE isnull(ins.ins_addno, '') WHEN '' THEN '' ELSE ins.ins_addno END) 
-									 + (CASE isnull(ins.ins_building, '') WHEN '' THEN '' ELSE '  ' + ins.ins_building END) 
-									 + (CASE isnull(ins.ins_village, '')  WHEN '' THEN '' ELSE '  ' + ins.ins_village END) 
-									 + (CASE isnull(ins.ins_street, '') WHEN '' THEN '' ELSE '  ' + ins.ins_street END) 
-									 + (CASE isnull(ins.ins_trog, '') WHEN '' THEN '' ELSE '  ' + ins.ins_trog END) 
-									 + (CASE isnull(ins.ins_soi, '')  WHEN '' THEN '' ELSE '  ' + ins.ins_soi END)
+										(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+' ' END) + 
+														(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' ' END) + 
+														(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+'  ' END) + 
+														(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' ' END) + 
+														(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+' ' END) + 
+														(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+' ' END)
 							 )
 						End
 					END	
 					,
 	IsHisInsuredNull = 0,
-	InsuredProvinceDistrictSub 	= centerdb.dbo.cnudf_GetMasterOic('','district',ins.ins_tumbol ,'')+'|',
-	InsuredZipCode = ins.ins_zipcode+'|',
-	InsuredCountryCode = centerdb.dbo.cnudf_GetMasterOic('','country','' ,ins.ins_country)+'|',
-	InsuredFullName =  ins.ins_fname + ins.ins_lname
+	InsuredProvinceDistrictSub 	= centerdb.dbo.cnudf_GetMasterOic('','district',#Result.tumbol ,''),
+	InsuredZipCode = #Result.zipcode,
+	InsuredCountryCode = centerdb.dbo.cnudf_GetMasterOic('','country','' ,#Result.country)
 FROM
 his_insured ins  
 where
