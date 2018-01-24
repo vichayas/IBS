@@ -16,6 +16,19 @@ set @BranchTo = '709'
 set @TrDateFrom = null 
 set @TrDateTo = NULL
 
+DECLARE @Year12 CHAR(2)
+DECLARE @Year13 CHAR(2)
+DECLARE @Year14 CHAR(2)
+DECLARE @Year15 CHAR(2)
+DECLARE @Year16 CHAR(2)
+DECLARE @Year17 CHAR(2)
+  SET @Year12 = '12'
+  SET @Year13 = '13'
+  SET @Year14 = '14'
+  SET @Year15 = '15'
+  SET @Year16 = '16'
+  SET @Year17 = '17'
+
 --  DROP TABLE #Result
 --  DROP TABLE #tempPolicy
 
@@ -64,6 +77,8 @@ CREATE TABLE #Result
 		trog varchar(40),
 		soi varchar(40),
 		tumbol varchar(40),
+		amphur char(2),
+		province char(2),
 		zipcode char(5),
 		country char(3),
 
@@ -79,7 +94,10 @@ CREATE TABLE #Result
 		tr_datetime varchar(20) NULL,
 		flag_group char(1) NULL,
   		class_oic char(2) NULL,
-  subclass_oic char(2) NULL
+	  subclass_oic char(2) NULL,
+	  ins_position_level char(1) NULL,
+	  ins_birthdate datetime,
+	   ins_sex char(1) 
 	);
 
 CREATE CLUSTERED INDEX i_tempResult
@@ -112,18 +130,6 @@ ON #tempPolicy (pol_yr,pol_br,pol_pre,pol_no,endos_seq);
 
 select pol_yr, pol_br, pol_pre, pol_no, count(1) from #tempPolicy group by pol_yr, pol_br, pol_pre, pol_no having count(1) > 1 order by pol_yr, pol_br, pol_pre, pol_no
 
-DECLARE @Year12 CHAR(2)
-DECLARE @Year13 CHAR(2)
-DECLARE @Year14 CHAR(2)
-DECLARE @Year15 CHAR(2)
-DECLARE @Year16 CHAR(2)
-DECLARE @Year17 CHAR(2)
-  SET @Year12 = '12'
-  SET @Year13 = '13'
-  SET @Year14 = '14'
-  SET @Year15 = '15'
-  SET @Year16 = '16'
-  SET @Year17 = '17'
 
 INSERT INTO #tempPolicy
 select  h.pol_yr , h.pol_br, h.pol_pre ,h.pol_no , h.endos_seq  , h.net_premium , h.stamp , h.vat ,h.tax ,
@@ -165,9 +171,15 @@ INSERT INTO #Result
 		tumbol,
 		zipcode,
 		country,
+		amphur,
+		province,
 		InsuredName,
 		Seq,
-		InsuredCitizenId			        
+		InsuredCitizenId,
+		ins_position_level,
+		ins_birthdate,
+		ins_sex,
+		IsHisInsuredNull			        
 		)
 select p.class_oic,
        p.sale_code+'-'+p.pol_yr+p.pol_br+'/POL/'+p.pol_no+'-'+p.pol_pre,
@@ -192,10 +204,21 @@ select p.class_oic,
 		ins.ins_tumbol,
 		ins.ins_zipcode,
 		ins.ins_country,
+		ins.ins_amphur,
+		ins.ins_province,
 		
 		ins.ins_fname + ins.ins_lname,
 		ins.ins_seq,
-		ins.ins_idno
+		ins.ins_idno,
+		ins.ins_position_level,
+		ins.ins_birthdate,
+		ins.ins_sex,
+		CASE WHEN ISNULL(ins_addno,'') + ISNULL(ins_amphur,'') + ISNULL(ins_province,'') = '' 
+				 THEN 
+					1
+				 ELSE
+					0
+		END
 
 FROM #tempPolicy p
 inner join his_insured ins WITH(NOLOCK) on 
@@ -205,6 +228,7 @@ inner join his_insured ins WITH(NOLOCK) on
 								p.pol_no = ins.pol_no and
 								p.endos_seq = ins.endos_seq
 							)
+
 
 
 UPDATE  #Result
@@ -223,8 +247,159 @@ where (#Result.PolEnd_Yr = h.pol_yr and
 #Result.PolEnd_Pre in ('506', '516')
 ) 
 
+--select * from #Result where IsHisInsuredNull  = 1
+--select * from #Result where IsHisInsuredNull  = 0
+
+--EXEC tempdb.dbo.sp_help N'#tempPolicy';
+
+-- Update Address his_insured
+--UPDATE  #Result
+--SET InsuredAddress = Case  #Result.flag_language     ---- Eng ------------------------------------------
+--			  						When 'E' Then
+--									  		Ltrim(
+--													(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+' ' END) + 
+--													(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' Bld., ' END) + 
+--													(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+' village, ' END) + 
+--													(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' Rd., ' END) + 
+--													(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+', ' END) + 
+--													(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+', ' END)
+--												)
+--					ELSE
+--				 		CASE #Result.country WHEN '764' THEN 
+--										Ltrim(
+--														(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+'เลขที่ ' END) + 
+--														(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' ' END) + 
+--														(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+'  ' END) + 
+--														(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' ถ.' END) + 
+--														(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+' ตรอก' END) + 
+--														(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+' ซ.' END)
+--														) 
+--						ELSE
+--							Ltrim(
+--										(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+' ' END) + 
+--														(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' ' END) + 
+--														(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+'  ' END) + 
+--														(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' ' END) + 
+--														(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+' ' END) + 
+--														(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+' ' END)
+--							 )
+--						End
+--					END	
+--					,
+--	IsHisInsuredNull = 0,
+--	InsuredProvinceDistrictSub 	= centerdb.dbo.cnudf_GetMasterOic('','district',#Result.tumbol ,''),
+--	InsuredZipCode = #Result.zipcode,
+--	InsuredCountryCode = centerdb.dbo.cnudf_GetMasterOic('','country','' ,#Result.country)
+--FROM
+--his_insured ins  
+--where
+--#tempPolicy.pol_yr = ins.pol_yr and
+--#tempPolicy.pol_br = ins.pol_br and
+--#tempPolicy.pol_pre = ins.pol_pre and
+--#tempPolicy.pol_no = ins.pol_no and
+--#tempPolicy.endos_seq = ins.endos_seq 
+-- AND
+--(
+--	ins.ins_addno is not null AND
+--	ins.ins_amphur is not null AND
+--	ins.ins_province is not null 
+--)
+
+--select * from #Result
+--where addno is  null AND
+-- amphur is  null AND
+-- province is null
+
+-- Update Address his_holder
+UPDATE  #Result
+SET 
+		addno = hld.hld_addno,
+		building = hld.hld_building,
+		village = hld.hld_village,
+		street = hld.hld_street,
+		trog = hld.hld_trog,
+		soi = hld.hld_soi,
+		tumbol = hld.hld_tumbol,
+		zipcode = hld.hld_zipcode,
+		country = hld.hld_country,
+		amphur = hld.hld_amphur,
+		province  = hld.hld_province,
+		IsHisInsuredNull = (
+								CASE WHEN ISNULL( hld.hld_addno,'') + ISNULL( hld.hld_amphur,'') + ISNULL( hld.hld_province,'') = '' 
+									 THEN 
+										1
+									 ELSE
+										0
+								  END
+								)				
+FROM
+his_holder  hld 
+where
+#Result.PolEnd_Yr = hld.pol_yr and 
+#Result.PolEnd_Br = hld.pol_br and 
+#Result.PolEnd_Pre = hld.pol_pre and 
+#Result.PolEnd_No = hld.pol_no and 
+#Result.endos_seq = hld.endos_seq  AND
+#Result.IsHisInsuredNull = 1
+
+-- Update Address his_holder
+select top 1 * from pol_insured
+UPDATE  #Result
+SET 
+		addno = hld.ins_addno,
+		building = hld.ins_building,
+		village = hld.ins_village,
+		street = hld.ins_street,
+		trog = hld.ins_trog,
+		soi = hld.ins_soi,
+		tumbol = hld.ins_tumbol,
+		zipcode = hld.ins_zipcode,
+		country = hld.ins_country,
+		amphur = hld.ins_amphur,
+		province  = hld.ins_province,
+		IsHisInsuredNull =  (
+								CASE WHEN ISNULL( hld.ins_addno,'') + ISNULL( hld.ins_amphur,'') + ISNULL( hld.ins_province,'') = '' 
+								 THEN 
+									1
+								 ELSE
+									0	
+								END	
+								)				
+FROM
+pol_insured  hld 
+where
+#Result.PolEnd_Yr = hld.pol_yr and 
+#Result.PolEnd_Br = hld.pol_br and 
+#Result.PolEnd_Pre = hld.pol_pre and 
+#Result.PolEnd_No = hld.pol_no and 
+#Result.IsHisInsuredNull = 1
+
+-- Update Address with branch
+UPDATE  #Result
+SET 
+		
+		zipcode = hld.zipcode,
+		province  = hld.province_code,
+		IsHisInsuredNull =  (
+								CASE WHEN ISNULL( hld.zipcode,'') + ISNULL(hld.province_code,'') = '' 
+								 THEN 
+									1
+								 ELSE
+									0	
+								END	
+								)				
+FROM
+centerdb.dbo.branch  hld 
+where
+#Result.PolEnd_Br = hld.branch_code and 
+#Result.IsHisInsuredNull = 1
+--===== End Update Address
 
 -- Update Seq,RelationHolderInsured
+UPDATE #Result
+SET 
+OccupationCode= isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')
+
 UPDATE  #Result
 SET 
 OccupationCode=  (
@@ -237,139 +412,35 @@ OccupationCode=  (
 
 
 select * from #Result
-select * 
-from his_insured
-where
-pol_yr = '12' and
-pol_pre = '533' and
-endos_seq = '0'
-
 select isnull(centerdb.dbo.cnudf_GetMasterOic('','position','','30116' ),'9999')
-
---EXEC tempdb.dbo.sp_help N'#tempPolicy';
-
--- Update Address his_insured
-UPDATE  #Result
-SET InsuredAddress = Case  #Result.flag_language     ---- Eng ------------------------------------------
-			  						When 'E' Then
-									  		Ltrim(
-													(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+' ' END) + 
-													(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' Bld., ' END) + 
-													(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+' village, ' END) + 
-													(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' Rd., ' END) + 
-													(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+', ' END) + 
-													(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+', ' END)
-												)
-					ELSE
-				 		CASE #Result.country WHEN '764' THEN 
-										Ltrim(
-														(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+'เลขที่ ' END) + 
-														(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' ' END) + 
-														(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+'  ' END) + 
-														(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' ถ.' END) + 
-														(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+' ตรอก' END) + 
-														(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+' ซ.' END)
-														) 
-						ELSE
-							Ltrim(
-										(CASE isnull(#Result.addno, '')    WHEN ''  THEN '' ElSE #Result.addno+' ' END) + 
-														(CASE isnull(#Result.building, '') WHEN ''  THEN '' ELSE #Result.building+' ' END) + 
-														(CASE isnull(#Result.village, '')  WHEN ''  THEN '' ELSE #Result.village+'  ' END) + 
-														(CASE isnull(#Result.street, '')   WHEN ''  THEN '' ELSE #Result.street+' ' END) + 
-														(CASE isnull(#Result.trog, '')     WHEN ''  THEN '' ELSE #Result.trog+' ' END) + 
-														(CASE isnull(#Result.soi, '')      WHEN ''  THEN '' ELSE #Result.soi+' ' END)
-							 )
-						End
-					END	
-					,
-	IsHisInsuredNull = 0,
-	InsuredProvinceDistrictSub 	= centerdb.dbo.cnudf_GetMasterOic('','district',#Result.tumbol ,''),
-	InsuredZipCode = #Result.zipcode,
-	InsuredCountryCode = centerdb.dbo.cnudf_GetMasterOic('','country','' ,#Result.country)
-FROM
-his_insured ins  
-where
-#tempPolicy.pol_yr = ins.pol_yr and
-#tempPolicy.pol_br = ins.pol_br and
-#tempPolicy.pol_pre = ins.pol_pre and
-#tempPolicy.pol_no = ins.pol_no and
-#tempPolicy.endos_seq = ins.endos_seq 
- AND
-(
-	ins.ins_addno is not null AND
-	ins.ins_amphur is not null AND
-	ins.ins_province is not null 
-)
-
-
--- Update Address his_holder
-UPDATE  #tempPolicy
-SET InsuredAddress = Case  #tempPolicy.flag_language     ---- Eng ------------------------------------------
-			  						When 'E' Then
-									  		Ltrim(
-											(CASE isnull(hld.hld_addno, '')    WHEN ''  THEN '' ElSE hld.hld_addno+' ' END) + 
-											(CASE isnull(hld.hld_building, '') WHEN ''  THEN '' ELSE hld.hld_building+' Bld., ' END) + 
-											(CASE isnull(hld.hld_village, '')  WHEN ''  THEN '' ELSE hld.hld_village+' village, ' END) + 
-											(CASE isnull(hld.hld_street, '')   WHEN ''  THEN '' ELSE hld.hld_street+' Rd., ' END) + 
-											(CASE isnull(hld.hld_trog, '')     WHEN ''  THEN '' ELSE hld.hld_trog+', ' END) + 
-											(CASE isnull(hld.hld_soi, '')      WHEN ''  THEN '' ELSE hld.hld_soi+', ' END)
-										)
-					ELSE
-				 		CASE hld.hld_country WHEN '764' THEN 
-										Ltrim(
-										(CASE isnull(hld.hld_addno, '') WHEN 	'-' THEN '' WHEN 	'' THEN ''  ELSE 'เลขที่ '  + hld.hld_addno END)
-									  +(CASE isnull(hld.hld_building, '') WHEN '' THEN '' ELSE ' ' + hld.hld_building END) 
-									  +(CASE isnull(hld.hld_village, '') WHEN '' THEN '' ELSE ' ' + hld.hld_village END) 
-									  +(CASE isnull(hld.hld_street, '') WHEN '' THEN '' ELSE ' ถ.' + hld.hld_street END) 
-									  +(CASE isnull(hld.hld_trog, '') WHEN '' THEN '' ELSE ' ตรอก' + hld.hld_trog END) 
-									  + (CASE isnull(hld.hld_soi, '') WHEN '' THEN '' ELSE ' ซ.' + hld.hld_soi END)
-									) 
-						ELSE
-							Ltrim(
-									 (CASE isnull(hld.hld_addno, '') WHEN '' THEN '' ELSE hld.hld_addno END) 
-									 + (CASE isnull(hld.hld_building, '') WHEN '' THEN '' ELSE '  ' + hld.hld_building END) 
-									 + (CASE isnull(hld.hld_village, '')  WHEN '' THEN '' ELSE '  ' + hld.hld_village END) 
-									 + (CASE isnull(hld.hld_street, '') WHEN '' THEN '' ELSE '  ' + hld.hld_street END) 
-									 + (CASE isnull(hld.hld_trog, '') WHEN '' THEN '' ELSE '  ' + hld.hld_trog END) 
-									 + (CASE isnull(hld.hld_soi, '')  WHEN '' THEN '' ELSE '  ' + hld.hld_soi END)
-								)  
-						End
-					END		
-					,
-	InsuredProvinceDistrictSub 	= centerdb.dbo.cnudf_GetMasterOic('','district',hld.hld_tumbol ,'')+'|',
-	InsuredZipCode = hld.hld_zipcode+'|',
-	InsuredCountryCode = centerdb.dbo.cnudf_GetMasterOic('','country','' ,hld.hld_country) +'|',
-	RelationHolderInsured = (
-							case  when #tempPolicy.InsuredFullName = hld.hld_fname+hld.hld_lname then '00'  
-								 else  centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','ผู้เอาประกัน','') 
-							end 
-						)+'|'		 				
-FROM
-his_holder  hld 
-where
-#tempPolicy.pol_yr = hld.pol_yr and
-#tempPolicy.pol_br = hld.pol_br and
-#tempPolicy.pol_pre = hld.pol_pre and
-#tempPolicy.pol_no = hld.pol_no and
-#tempPolicy.endos_seq = hld.endos_seq AND
-#tempPolicy.IsHisInsuredNull = 1
---===== End Update Address
-
 --===== Update when OccupationLevel h.ClassSub '0601','0602','0603','0604'
-UPDATE  #tempPolicy
+select distinct ins_position_level from his_insured
+
+UPDATE  #Result
+SET OccupationLevel = ltrim(rtrim(isnull( ins_position_level,'')))
+
+UPDATE  #Result
+SET OccupationLevel	= '01'
+where OccupationLevel = '' or OccupationLevel = '0'
+
+UPDATE  #Result
 SET OccupationLevel = (
-						case when isnull( ins.ins_position_level,'0') = '0' or  ltrim(rtrim(isnull( ins.ins_position_level,'')))= '' then '01' else  '0'+ isnull( ins.ins_position_level,'')   end
-					  )+'|'
+						case when isnull( ins.ins_position_level,'0') = '0' or  
+									ltrim(rtrim(isnull( ins.ins_position_level,'')))= '' 
+									then '01' 
+									else  '0'+ isnull( ins.ins_position_level,'')   
+								end
+					  )
 FROM
 his_insured ins  
 where
-#tempPolicy.pol_yr = ins.pol_yr and
-#tempPolicy.pol_br = ins.pol_br and
-#tempPolicy.pol_pre = ins.pol_pre and
-#tempPolicy.pol_no = ins.pol_no and
-#tempPolicy.endos_seq = ins.endos_seq AND
+#Result.PolEnd_Yr = ins.pol_yr and 
+#Result.PolEnd_Br = ins.pol_br and 
+#Result.PolEnd_Pre = ins.pol_pre and 
+#Result.PolEnd_No = ins.pol_no and 
+#Result.endos_seq = ins.endos_seq AND
 (
-	#tempPolicy.ClassSub in ('0601','0602','0603','0604')
+	#Result.ClassSub in ('0601','0602','0603','0604')
 )
 --===== End Update OccupationLevel
 --===== Update when InsuredBirthday &  InsuredGender
