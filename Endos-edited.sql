@@ -3,8 +3,8 @@ GO
 
 
 Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
-set	@StartDateFrom ='2017/01/01'
-set @StartDateTo = '2017/01/07'
+set	@StartDateFrom ='2013/01/01'
+set @StartDateTo = '2013/01/31'
 set @BranchFrom = '000'
 set @BranchTo = '709'
 set @TrDateFrom = null 
@@ -94,17 +94,17 @@ select prefix_code, flag_space, flag_sex, prefix_name from centerdb.dbo.prefix
 --DECLARE @YEARNO_17 CHAR(2)
 --set @YEARNO_17 = '17';
 
-CREATE TABLE #tmpCountryHld (
-	country_number CHAR(3) NULL,
-	country_code CHAR(3) NULL,
-	UNIQUE CLUSTERED ( country_number )
-)
+--CREATE TABLE #tmpCountryHld (
+--	country_number CHAR(3) NULL,
+--	country_code CHAR(3) NULL,
+--	UNIQUE CLUSTERED ( country_number )
+--)
 
-INSERT INTO #tmpCountryHld
-SELECT hld_country AS country_number , centerdb.dbo.cnudf_GetMasterOic('', 'country', '' , hld_country ) AS country_code 
-FROM pol_holder (nolock)
-WHERE pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
-GROUP BY hld_country
+--INSERT INTO #tmpCountryHld
+--SELECT hld_country AS country_number , centerdb.dbo.cnudf_GetMasterOic('', 'country', '' , hld_country ) AS country_code 
+--FROM pol_holder (nolock)
+--WHERE pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
+--GROUP BY hld_country
 
 --drop table #tmpCountryHld
 
@@ -131,18 +131,18 @@ GROUP BY hld_country
 DECLARE @comp_code_oic AS VARCHAR(10) 
 SET @comp_code_oic = ( select comp_code_oic+'|' from centerdb.dbo.sys_control (NOLOCK) )
 
-DECLARE @YEARNO_12 CHAR(2)
-set @YEARNO_12 = '12';
-DECLARE @YEARNO_13 CHAR(2)
-set @YEARNO_13 = '13';
-DECLARE @YEARNO_14 CHAR(2)
-set @YEARNO_14 = '14';
-DECLARE @YEARNO_15 CHAR(2)
-set @YEARNO_15 = '15';
-DECLARE @YEARNO_16 CHAR(2)
-set @YEARNO_16 = '15';
-DECLARE @YEARNO_17 CHAR(2)
-set @YEARNO_17 = '17';
+--DECLARE @YEARNO_12 CHAR(2)
+--set @YEARNO_12 = '12';
+--DECLARE @YEARNO_13 CHAR(2)
+--set @YEARNO_13 = '13';
+--DECLARE @YEARNO_14 CHAR(2)
+--set @YEARNO_14 = '14';
+--DECLARE @YEARNO_15 CHAR(2)
+--set @YEARNO_15 = '15';
+--DECLARE @YEARNO_16 CHAR(2)
+--set @YEARNO_16 = '15';
+--DECLARE @YEARNO_17 CHAR(2)
+--set @YEARNO_17 = '17';
 
 SELECT 
 CompanyCode			= @comp_code_oic,
@@ -339,7 +339,6 @@ and bnf.bnf_seq in ( select min (bnf_seq)
 							and bnf.ins_seq = pol_beneficiary.ins_seq  
 						)
 LEFT JOIN #tmpPrefix prf3 on prf3.prefix_code	= bnf.bnf_prefix
-
 LEFT JOIN pol_holder  hld 
 	on hld.pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
 	and hld.pol_yr	= e.pol_yr
