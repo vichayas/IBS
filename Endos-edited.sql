@@ -1,15 +1,19 @@
 USE [miscwebdb]
 GO
 
-
+ -- attempt 1 : JAN 2017 total time 01:56 min :  1 026 records
+ -- attempt 2 : MAR 2017 total time 04:25 min :  3 095 records
+ -- attempt 3 : APR 2017 total time 27:30 min : 17 784 records
+ -- attempt 4 : MAY 2017 total time 47:16 min : 60 624 records
+ -- attempt 5 : JUN 2017 total time 47:16 min : 60 624 records
+ 
 Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
-set	@StartDateFrom ='2013/01/01'
-set @StartDateTo = '2013/01/31'
+set	@StartDateFrom ='2017/06/01'
+set @StartDateTo = '2017/06/30'
 set @BranchFrom = '000'
 set @BranchTo = '709'
 set @TrDateFrom = null 
 set @TrDateTo = NULL
-
 
 DECLARE @YEARNO_12 CHAR(2)
 set @YEARNO_12 = '12';
@@ -24,15 +28,17 @@ set @YEARNO_16 = '15';
 DECLARE @YEARNO_17 CHAR(2)
 set @YEARNO_17 = '17';
 
-DECLARE @MonthNDayStart CHAR(6)
-DECLARE @MonthNDayEnd CHAR(6)
-DECLARE @YEARNO CHAR(2)
-set @YEARNO =  @YEARNO_17
-
 declare @pol_yr_start DATETIME;
 SET @pol_yr_start = convert(datetime , @StartDateFrom ,121 )
 DECLARE @pol_yr_end DATETIME;
 set @pol_yr_end = convert(datetime , @StartDateTo ,121 )
+
+
+DECLARE @relationship AS VARCHAR(10) 
+SET @relationship = centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','ผู้เอาประกัน','')
+
+DECLARE @comp_code_oic AS VARCHAR(10) 
+SET @comp_code_oic = ( select comp_code_oic+'|' from centerdb.dbo.sys_control (NOLOCK) )
 
 
 --================== Endosement ==============================
@@ -49,7 +55,7 @@ inner join endos_detail  ed on
 	and e.app_no	= ed.app_no
 and ed.seq_no in (select min(seq_no) from endos_detail where e.app_yr = app_yr and e.app_br = app_br and  e.app_pre = app_pre and e.app_no = app_no)
 inner join centerdb.dbo.subclass c on e.app_pre = c.class_code + c.subclass_code --and isnull(c.flag_mixpolicy,'') <> 'Y'
-WHERE e.app_Yr BETWEEN @YEARNO_13 AND @YEARNO_17 
+WHERE e.app_Yr BETWEEN @YEARNO_12 AND @YEARNO_17 
 and e.approve_datetime is not null 
 and c.class_oic in ('06','07','11')  
 and ( (e.eff_date is null)  or ( e.eff_date between  @pol_yr_start  and @pol_yr_end ))
@@ -61,8 +67,6 @@ ON #tempEndorse (app_yr,app_br,app_pre,app_no);
 
 CREATE NONCLUSTERED INDEX i_tempEndorse_flag_group 
 ON #tempEndorse (flag_group);
-
---drop table #tempEndorse
 
 --=================== prefix =============================
 
@@ -77,78 +81,32 @@ CREATE TABLE #tmpPrefix (
 INSERT INTO #tmpPrefix
 select prefix_code, flag_space, flag_sex, prefix_name from centerdb.dbo.prefix
 
---drop table #tmpPrefix
+--=================== journey TA =============================
 
---=================== #tmpCountry =============================
+CREATE TABLE #tmpJourneyTA (
+	[pol_yr] [char](2) NOT NULL,
+	[pol_br] [char](3) NOT NULL,
+	[pol_pre] [char](3) NOT NULL,
+	[pol_no] [char](6) NOT NULL,
+	[journey_seq] [smallint] NOT NULL,
+	country_code_to  [char](3) NULL,
+	UNIQUE CLUSTERED ( [pol_yr], [pol_br], [pol_pre], [pol_no], [journey_seq])
+)
 
---DECLARE @YEARNO_12 CHAR(2)
---set @YEARNO_12 = '12';
---DECLARE @YEARNO_13 CHAR(2)
---set @YEARNO_13 = '13';
---DECLARE @YEARNO_14 CHAR(2)
---set @YEARNO_14 = '14';
---DECLARE @YEARNO_15 CHAR(2)
---set @YEARNO_15 = '15';
---DECLARE @YEARNO_16 CHAR(2)
---set @YEARNO_16 = '15';
---DECLARE @YEARNO_17 CHAR(2)
---set @YEARNO_17 = '17';
+insert into #tmpJourneyTA
+select [pol_yr], [pol_br], [pol_pre], [pol_no], [journey_seq], country_code_to from pol_journey_ta (nolock)
+where pol_yr between @YEARNO_12 and @YEARNO_17
 
---CREATE TABLE #tmpCountryHld (
---	country_number CHAR(3) NULL,
---	country_code CHAR(3) NULL,
---	UNIQUE CLUSTERED ( country_number )
---)
-
---INSERT INTO #tmpCountryHld
---SELECT hld_country AS country_number , centerdb.dbo.cnudf_GetMasterOic('', 'country', '' , hld_country ) AS country_code 
---FROM pol_holder (nolock)
---WHERE pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
---GROUP BY hld_country
-
---drop table #tmpCountryHld
+--================================================
 
 
---==================
+--=================== SELECT ENDORSEMENT =============================
 
---CREATE TABLE #tmpCountryIns (
---	country_number CHAR(3) NULL,
---	country_code CHAR(3) NULL,
---	UNIQUE CLUSTERED ( country_number )
---)
-
---INSERT INTO #tmpCountryIns
---SELECT ins_country AS country_number , centerdb.dbo.cnudf_GetMasterOic('', 'country', '' , ins_country ) AS country_code 
---FROM pol_insured (nolock)
---WHERE pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
---GROUP BY ins_country
-
---drop table #tmpCountryIns
-
---=================== SELECT =============================
-
-
-DECLARE @comp_code_oic AS VARCHAR(10) 
-SET @comp_code_oic = ( select comp_code_oic+'|' from centerdb.dbo.sys_control (NOLOCK) )
-
---DECLARE @YEARNO_12 CHAR(2)
---set @YEARNO_12 = '12';
---DECLARE @YEARNO_13 CHAR(2)
---set @YEARNO_13 = '13';
---DECLARE @YEARNO_14 CHAR(2)
---set @YEARNO_14 = '14';
---DECLARE @YEARNO_15 CHAR(2)
---set @YEARNO_15 = '15';
---DECLARE @YEARNO_16 CHAR(2)
---set @YEARNO_16 = '15';
---DECLARE @YEARNO_17 CHAR(2)
---set @YEARNO_17 = '17';
-
-SELECT 
+SELECT
 CompanyCode			= @comp_code_oic,
 MainClass			= e.class_oic +'|', 
 SubClass			=  (case when e.app_pre	IN ( '506' , '516' )
-								THEN (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = e.pol_yr and pol_br = e.pol_br and pol_pre = e.app_pre and pol_no = e.pol_no  /*order by journey_seq asc*/ )
+								THEN (select top 1 case  country_code_to when '764' then   '06' else '08' end from #tmpJourneyTA where pol_yr = e.pol_yr and pol_br = e.pol_br and pol_pre = e.app_pre and pol_no = e.pol_no  /*order by journey_seq asc*/ )
 								--when '506' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = e.pol_yr and pol_br = e.pol_br and pol_pre = e.app_pre and pol_no = e.pol_no  /*order by journey_seq asc*/ ) 
 								--when '516' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = e.pol_yr and pol_br = e.pol_br and pol_pre = e.app_pre and pol_no = e.pol_no  /*order by journey_seq asc*/ ) 
 						else  e.subclass_oic end )+'|'  ,
@@ -156,13 +114,7 @@ PolicyNumber		= e.sale_code+'-'+ e.pol_yr+e.pol_br+'/POL/'+e.pol_no+'-'+e.app_pr
 EndorsementNumber	= e.endos_yr+e.app_br +'/END/' +e.endos_no +'-'+e.app_pre +'|' ,
 Seq					= CAST(ins.ins_seq as varchar(20))+'|' ,
 InsuredName			= ISNULL(prf2.prefix_name,'') + case when ISNULL(prf2.flag_space,'')  ='Y' then ' ' else '' end  +ins.ins_fname +' ' +ins.ins_lname  +'|' ,
-
--- no insurance address    return 233 rows in    12	sec 7 days
--- have insurance address  return 233 rows in    21	sec 7 days
--- have insurance address  return 233 rows in    31	sec try 1 7 days
--- have insurance address  return 233 rows in    05 sec try 3 modify all 7 days
--- have insurance address  return 217 rows in 01:33 sec try 4 modify all full 7 days
-InsuredAddress = 
+InsuredAddress		= 
 (
 		CASE e.flag_language     ---- Eng ------------------------------------------
 		WHEN 'E' THEN
@@ -272,7 +224,7 @@ InsuredAddress =
 									--			case when isnull(ins.ins_sex,'') ='' then case  when isnull(prf2.flag_sex,'N')='N' then 'M'  else prf2.flag_sex  end else case  when isnull( ins.ins_sex ,'N')='N' then 'M' else ins.ins_sex  end end 
 									else '' end)+'|'
 , RelationHolderInsured			= (case  when ins.ins_fname + ins.ins_lname = hld.hld_fname+hld.hld_lname then ''  
-										else  centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','ผู้เอาประกัน','') end )+'|'
+										else @relationship  end )+'|'
 , Beneficiary1					= (case when isnull(bnf.bnf_fname,'') ='' or  charindex( 'ทายาทโดยธรรม' ,bnf.bnf_fname ,1 )> 0  or  charindex('ทายาทตามกฏหมาย' , bnf.bnf_fname ,1 )> 0  then 'ทายาทโดยธรรม'  
 										else  isnull(prf3.prefix_name,'') + case when isnull(prf3.flag_space,11) = 'Y' then ' ' else '' end + bnf.bnf_fname +' ' + bnf.bnf_lname end)+'|'
 , RelationInsuredBeneficiary1	= (case when isnull(bnf.bnf_fname,'') ='' or  charindex( 'ทายาทโดยธรรม' ,bnf.bnf_fname ,1 )> 0  or  charindex( 'ทายาทตามกฏหมาย' ,bnf.bnf_fname ,1 )> 0  then '99' 
@@ -321,10 +273,9 @@ and
 			)
 	)
 )
--- 233 -> 217
 LEFT JOIN #tmpPrefix prf2 on ins.ins_prefix		= prf2.prefix_code
 LEFT JOIN pol_beneficiary bnf 
-ON bnf.pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
+ON bnf.pol_yr BETWEEN @YEARNO_12 AND @YEARNO_17
 and e.pol_yr	= bnf.pol_yr 
 and e.pol_br	= bnf.pol_br 
 and e.app_pre	= bnf.pol_pre 
@@ -340,19 +291,39 @@ and bnf.bnf_seq in ( select min (bnf_seq)
 						)
 LEFT JOIN #tmpPrefix prf3 on prf3.prefix_code	= bnf.bnf_prefix
 LEFT JOIN pol_holder  hld 
-	on hld.pol_yr BETWEEN @YEARNO_13 AND @YEARNO_17
+	on hld.pol_yr BETWEEN @YEARNO_12 AND @YEARNO_17
 	and hld.pol_yr	= e.pol_yr
 	and hld.pol_br	= e.pol_br
 	and hld.pol_pre = e.app_pre
 	and hld.pol_no	= e.pol_no
 
---LEFT JOIN pol_journey_ta  journeyTA 
---	where journeyTA.pol_yr	= e.pol_yr 
---	and journeyTA.pol_br	= e.pol_br 
---	and journeyTA.pol_pre	= e.app_pre 
---	and journeyTA.pol_no	= e.pol_no
 
---where --'000008' = ins.pol_no and 
---ins.pol_yr = '17' and ins.pol_br = 006 and ins.pol_pre = '520'
+	drop table #tempEndorse
+	drop table #tmpPrefix
+	drop table #tmpJourneyTA
 
---===================================================
+
+
+	--======================== for test ============================
+
+--	DECLARE @YEARNO_12 CHAR(2)
+--set @YEARNO_12 = '12';
+--DECLARE @YEARNO_13 CHAR(2)
+--set @YEARNO_13 = '13';
+--DECLARE @YEARNO_14 CHAR(2)
+--set @YEARNO_14 = '14';
+--DECLARE @YEARNO_15 CHAR(2)
+--set @YEARNO_15 = '15';
+--DECLARE @YEARNO_16 CHAR(2)
+--set @YEARNO_16 = '15';
+--DECLARE @YEARNO_17 CHAR(2)
+--set @YEARNO_17 = '17';
+
+--select top 10000 * from pol_insured (nolock)
+--where  1= 1
+--and pol_yr between @YEARNO_12 and @YEARNO_17
+--and pol_br = 302
+--and pol_pre = 570
+--and pol_no = '000048'
+
+--14506-17302/POL/000048-570|
