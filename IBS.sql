@@ -36,10 +36,12 @@ set @pol_yr_end = convert(datetime , @StartDateTo ,121 )
 --  DROP TABLE #Result
 --  DROP TABLE #tempPolicy
 
+DECLARE @CompanyCode VARCHAR(10)
+@CompanyCode = (select comp_code_oic+'|' from centerdb.dbo.sys_control) 
 
 CREATE TABLE #Result
 	(
-		CompanyCode VARCHAR(10),
+		CompanyCode VARCHAR(10) DEFAULT @CompanyCode,
 		MainClass VARCHAR(50),
 		Beneficiary1 VARCHAR (256),
 		PolicyNumber VARCHAR(30),
@@ -101,7 +103,8 @@ CREATE TABLE #Result
 	  subclass_oic char(2) NULL,
 	  ins_position_level char(1) NULL,
 	  ins_birthdate datetime,
-	   ins_sex char(1) 
+	   ins_sex char(1),
+	   ins_prefix char(3)
 	);
 
 CREATE CLUSTERED INDEX i_tempResult
@@ -149,6 +152,7 @@ and (( convert(varchar(10) , h.start_datetime ,111 ) between  @StartDateFrom  an
 
 select * from #tempPolicy
 
+
 INSERT INTO #Result 
     (
 	  MainClass,
@@ -183,6 +187,11 @@ INSERT INTO #Result
 		ins_position_level,
 		ins_birthdate,
 		ins_sex,
+		ins_prefix,
+		InsuredBirthday,
+		PremiumAmt,
+		TransactionStatus,
+		ReferenceNumber,
 		IsHisInsuredNull			        
 		)
 select p.class_oic,
@@ -217,6 +226,11 @@ select p.class_oic,
 		ins.ins_position_level,
 		ins.ins_birthdate,
 		ins.ins_sex,
+		ins.ins_prefix,
+		convert(varchar(10),ins.ins_birthdate,112),
+		cast(convert(decimal(15,2),p.total_premium) as varchar(20)),
+		'N',
+		'',
 		CASE WHEN ISNULL(ins_addno,'') + ISNULL(ins_amphur,'') + ISNULL(ins_province,'') = '' 
 				 THEN 
 					1
@@ -399,24 +413,6 @@ where
 #Result.IsHisInsuredNull = 1
 --===== End Update Address
 
--- Update Seq,RelationHolderInsured
-UPDATE #Result
-SET 
-OccupationCode= isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')
-
-UPDATE  #Result
-SET 
-OccupationCode=  (
-					case when isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999') =  '' then 
-							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position',position_name ,''),'9999')
-						else  
-							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')  
-					end
-				)
-
-
-select * from #Result
-select isnull(centerdb.dbo.cnudf_GetMasterOic('','position','','30116' ),'9999')
 --===== Update when OccupationLevel h.ClassSub '0601','0602','0603','0604'
 select distinct ins_position_level from his_insured
 
@@ -448,37 +444,96 @@ where
 )
 --===== End Update OccupationLevel
 --===== Update when InsuredBirthday &  InsuredGender
-UPDATE  #tempPolicy
-SET InsuredBirthday = (
-						convert(varchar(10),ins.ins_birthdate,112)
-					  )+'|',
+UPDATE  #Result
+SET 
 	InsuredGender = (
-					  case when isnull(ins.ins_sex,'') ='' then 
+					  case when isnull(#Result.ins_sex,'') ='' then 
 					  			case  when isnull(prf2.flag_sex,'N')='N' then 
 								  	'M'  
 								  else 
 								  	prf2.flag_sex  
 								end 
-					   else case  when isnull( ins.ins_sex ,'N')='N' then 
+					   else case  when isnull( #Result.ins_sex ,'N')='N' then 
 					   				'M' 
 								  else 
 								  	ins.ins_sex  
 							end 
 					  end
-					)+'|'
-FROM
-his_insured ins  
-left join centerdb.dbo.prefix prf2 on 
-								ins.ins_prefix = prf2.prefix_code
-where
-#tempPolicy.pol_yr = ins.pol_yr and
-#tempPolicy.pol_br = ins.pol_br and
-#tempPolicy.pol_pre = ins.pol_pre and
-#tempPolicy.pol_no = ins.pol_no and
-#tempPolicy.endos_seq = ins.endos_seq AND
+					)
+FROM centerdb.dbo.prefix prf2 
+								
+where #Result.ins_prefix = prf2.prefix_code AND
 (
 	#tempPolicy.ClassSub in ('0601','0602','0604')
 )
+
+--=== Update Beneficiary
+UPDATE #Result
+SET Beneficiary1= (
+				case when isnull(bnf.bnf_fname,'') ='' or charindex( 'ทายาทโดยธรรม',bnf.bnf_fname  ,1 )> 0  or  charindex( 'ทายาทตามกฏหมาย' ,bnf.bnf_fname ,1 )> 0  then 'ทายาทโดยธรรม'  
+					else  isnull(prf3.prefix_name,'') + case when isnull(prf3.flag_space,11) = 'Y' then ' ' else '' end + bnf.bnf_fname +' ' + bnf.bnf_lname 
+				end
+				)+'|', 
+RelationInsuredBeneficiary1= (
+								case when  isnull(bnf.bnf_fname,'') ='' or charindex('ทายาทโดยธรรม' , bnf.bnf_fname ,1 )> 0  or  charindex('ทายาทตามกฏหมาย' , bnf.bnf_fname ,1 )> 0  then '99' 
+									else centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','', bnf.bnf_relationship) 
+								end
+							)+'|', 
+NumOfPerson= cast(
+					(
+						case  when isnull(h.flag_group,'') ='G' and charindex('ตามรายการแนบ',ins.ins_fname ,1) > 0 
+								then (
+										select count(ins_seq) 
+										from his_insured i 
+										where h.pol_yr = i.pol_yr and h.pol_br = i.pol_br and h.pol_pre = i.pol_pre and h.pol_no = i.pol_no  and h.endos_seq = i.endos_seq
+									)
+							else  1 
+						end
+					) as varchar(20) 
+				)+'|',
+
+FROM  his_beneficiary bnf 
+left join centerdb.dbo.prefix prf3 on 
+							prf3.prefix_code = bnf.bnf_prefix
+
+WHERE 
+	#Result.pol_yr = bnf.pol_yr and
+	#Result.pol_br = bnf.pol_br and
+	#Result.pol_pre = bnf.pol_pre and
+	#Result.pol_no = bnf.pol_no and
+	#Result.endos_seq = bnf.endos_seq  and
+	#Result.ins_seq = bnf.ins_seq and
+		bnf.bnf_seq in (
+						select min (bnf_seq) from his_beneficiary  where 
+						#Result.pol_yr = pol_yr and
+						#Result.pol_br = pol_br and
+						#Result.pol_pre = pol_pre and
+						#Result.pol_no = pol_no and
+						#Result.endos_seq = endos_seq  and
+						#Result.ins_seq = ins_seq  
+					)
+
+--== End Benificialry
+
+
+-- Update Seq,RelationHolderInsured
+UPDATE #Result
+SET 
+OccupationCode= isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')
+
+UPDATE  #Result
+SET 
+OccupationCode=  (
+					case when isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999') =  '' then 
+							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position',position_name ,''),'9999')
+						else  
+							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')  
+					end
+				)
+
+
+select * from #Result
+select isnull(centerdb.dbo.cnudf_GetMasterOic('','position','','30116' ),'9999')
 
 --================== Endosement ==============================
 
