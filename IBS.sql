@@ -5,14 +5,20 @@ GO
  --drop table #tempPolicy
  --drop table #tempEndorse
  --drop table #tempPolInsured
+ --drop table #Result
 
 Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
-set	@StartDateFrom ='2017/01/01'
-set @StartDateTo = '2017/01/07'
+set	@StartDateFrom ='2014/01/01'
+set @StartDateTo = '2014/01/31'
 set @BranchFrom = '000'
 set @BranchTo = '709'
 set @TrDateFrom = null 
 set @TrDateTo = NULL
+
+
+
+DECLARE @StartYear int
+SET @StartYear = CONVERT(int,LEFT(@StartDateFrom,4))
 
 DECLARE @Year12 CHAR(2)
 DECLARE @Year13 CHAR(2)
@@ -27,43 +33,39 @@ DECLARE @Year17 CHAR(2)
   SET @Year16 = '16'
   SET @Year17 = '17'
 
-SET @comp_code_oic = ( select comp_code_oic+'|' from centerdb.dbo.sys_control (NOLOCK) )
-DECLARE @comp_code_oic AS VARCHAR(10) 
-declare @pol_yr_start DATETIME;
-SET @pol_yr_start = convert(datetime , @StartDateFrom ,121 )
-DECLARE @pol_yr_end DATETIME;
-set @pol_yr_end = convert(datetime , @StartDateTo ,121 )
---  DROP TABLE #Result
---  DROP TABLE #tempPolicy
 
 DECLARE @CompanyCode VARCHAR(10)
-@CompanyCode = (select comp_code_oic+'|' from centerdb.dbo.sys_control) 
+SET @CompanyCode = (select comp_code_oic+'|' from centerdb.dbo.sys_control (NOLOCK) ) 
 
 CREATE TABLE #Result
 	(
-		CompanyCode VARCHAR(10) DEFAULT @CompanyCode,
-		MainClass VARCHAR(50),
-		Beneficiary1 VARCHAR (256),
+		CompanyCode VARCHAR(5), 
+		MainClass VARCHAR(3),
+		SubClass varchar(3),
 		PolicyNumber VARCHAR(30),
-		EndorsementNumber VARCHAR(2),
-		SubClass varchar(5),
-		ClassSub varchar(5),
-		Seq varchar(25),
+		EndorsementNumber VARCHAR(30),
+		Seq varchar(50),
 		InsuredName varchar(200),
 		InsuredAddress varchar(500),
 		InsuredProvinceDistrictSub  varchar(6),
+		InsuredZipCode  varchar(5),
+		InsuredCountryCode varchar(3),
 		InsuredCitizenId varchar(20),
-		OccupationCode varchar(10),
 		OccupationLevel varchar(2),
+		OccupationCode varchar(4),
 		InsuredBirthday varchar(10),
 		InsuredGender varchar(1),
 		RelationHolderInsured varchar(2),
-		InsuredFullName varchar(200),
-		HolderFulName varchar(200),
+		Beneficiary1 VARCHAR (200),
+		RelationInsuredBeneficiary1 VARCHAR(2),
 		NumOfPerson INTEGER,
-		PremiumAmt VARCHAR (10),
-		TransactionStatus VARCHAR(3),
-		ReferenceNumber VARCHAR(15),
+		PremiumAmt VARCHAR (18),
+		TransactionStatus VARCHAR(1),
+		ReferenceNumber VARCHAR(35),
+		--==== End data for ผู้เอาประกันภัย และผรู้ับผลประโยชน์
+		ClassSub varchar(5),
+		InsuredFullName varchar(200),
+		HolderFullName varchar(200),
 		IsHisInsuredNull bit DEFAULT 0,
 		IsInVatControl bit DEFAULT 0,
 
@@ -71,7 +73,8 @@ CREATE TABLE #Result
 		PolEnd_Br CHAR(3) NOT NULL,
 		PolEnd_Pre CHAR(3)  NOT NULL,
 		PolEnd_No CHAR(6)  NOT NULL,
-  		endos_seq int NULL,
+  		endos_seq smallint NULL,
+		ins_seq smallint NULL,
 		IsPolicy bit  NOT NULL,
 
 		position CHAR(5),
@@ -85,7 +88,6 @@ CREATE TABLE #Result
 		tumbol varchar(40),
 		amphur char(2),
 		province char(2),
-		zipcode char(5),
 		country char(3),
 
 		net_premium float NULL,
@@ -104,7 +106,8 @@ CREATE TABLE #Result
 	  ins_position_level char(1) NULL,
 	  ins_birthdate datetime,
 	   ins_sex char(1),
-	   ins_prefix char(3)
+	   ins_prefix char(3),
+	   ins_fname varchar(100),
 	);
 
 CREATE CLUSTERED INDEX i_tempResult
@@ -155,6 +158,7 @@ select * from #tempPolicy
 
 INSERT INTO #Result 
     (
+	  CompanyCode,
 	  MainClass,
       PolicyNumber,
       EndorsementNumber,
@@ -177,7 +181,7 @@ INSERT INTO #Result
 		trog,
 		soi,
 		tumbol,
-		zipcode,
+		InsuredZipCode,
 		country,
 		amphur,
 		province,
@@ -192,9 +196,13 @@ INSERT INTO #Result
 		PremiumAmt,
 		TransactionStatus,
 		ReferenceNumber,
+		ins_fname,
+		ins_seq,
 		IsHisInsuredNull			        
 		)
-select p.class_oic,
+select 
+		@CompanyCode,
+		p.class_oic,
        p.sale_code+'-'+p.pol_yr+p.pol_br+'/POL/'+p.pol_no+'-'+p.pol_pre,
        '',
        p.subclass_oic,
@@ -231,6 +239,8 @@ select p.class_oic,
 		cast(convert(decimal(15,2),p.total_premium) as varchar(20)),
 		'N',
 		'',
+		ins.ins_fname,
+		ins.ins_seq,
 		CASE WHEN ISNULL(ins_addno,'') + ISNULL(ins_amphur,'') + ISNULL(ins_province,'') = '' 
 				 THEN 
 					1
@@ -248,7 +258,7 @@ inner join his_insured ins WITH(NOLOCK) on
 							)
 
 
-
+--=== Update Subclass for 506, 516
 UPDATE  #Result
 SET SubClass = (
 				case  h.country_code_to 
@@ -264,6 +274,7 @@ where (#Result.PolEnd_Yr = h.pol_yr and
 #Result.endos_seq = h.endos_seq and
 #Result.PolEnd_Pre in ('506', '516')
 ) 
+--==== End Update
 
 --select * from #Result where IsHisInsuredNull  = 1
 --select * from #Result where IsHisInsuredNull  = 0
@@ -338,10 +349,15 @@ SET
 		trog = hld.hld_trog,
 		soi = hld.hld_soi,
 		tumbol = hld.hld_tumbol,
-		zipcode = hld.hld_zipcode,
+		InsuredZipCode = hld.hld_zipcode,
 		country = hld.hld_country,
 		amphur = hld.hld_amphur,
 		province  = hld.hld_province,
+		RelationHolderInsured = (
+							case  when #Result.InsuredName = hld.hld_fname+hld.hld_lname then '00'  
+								 else  centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','ผู้เอาประกัน','') 
+							end 
+					),
 		IsHisInsuredNull = (
 								CASE WHEN ISNULL( hld.hld_addno,'') + ISNULL( hld.hld_amphur,'') + ISNULL( hld.hld_province,'') = '' 
 									 THEN 
@@ -351,7 +367,7 @@ SET
 								  END
 								)				
 FROM
-his_holder  hld 
+his_holder  hld WITH(NOLOCK)
 where
 #Result.PolEnd_Yr = hld.pol_yr and 
 #Result.PolEnd_Br = hld.pol_br and 
@@ -360,8 +376,9 @@ where
 #Result.endos_seq = hld.endos_seq  AND
 #Result.IsHisInsuredNull = 1
 
+select * from #Result
 -- Update Address his_holder
-select top 1 * from pol_insured
+
 UPDATE  #Result
 SET 
 		addno = hld.ins_addno,
@@ -371,7 +388,7 @@ SET
 		trog = hld.ins_trog,
 		soi = hld.ins_soi,
 		tumbol = hld.ins_tumbol,
-		zipcode = hld.ins_zipcode,
+		InsuredZipCode = hld.ins_zipcode,
 		country = hld.ins_country,
 		amphur = hld.ins_amphur,
 		province  = hld.ins_province,
@@ -384,7 +401,7 @@ SET
 								END	
 								)				
 FROM
-pol_insured  hld 
+pol_insured  hld  WITH(NOLOCK)
 where
 #Result.PolEnd_Yr = hld.pol_yr and 
 #Result.PolEnd_Br = hld.pol_br and 
@@ -396,7 +413,7 @@ where
 UPDATE  #Result
 SET 
 		
-		zipcode = hld.zipcode,
+		InsuredZipCode = hld.zipcode,
 		province  = hld.province_code,
 		IsHisInsuredNull =  (
 								CASE WHEN ISNULL( hld.zipcode,'') + ISNULL(hld.province_code,'') = '' 
@@ -407,21 +424,118 @@ SET
 								END	
 								)				
 FROM
-centerdb.dbo.branch  hld 
+centerdb.dbo.branch  hld   WITH(NOLOCK)
 where
 #Result.PolEnd_Br = hld.branch_code and 
 #Result.IsHisInsuredNull = 1
+
+--select * from #Result
 --===== End Update Address
 
+--=== Update the data for Undefined data
+UPDATE #Result
+SET	InsuredCitizenId = 'UNDEFINE'
+WHERE  CONVERT(int,LEFT([start_date],4)) <= 2015 and
+(InsuredCitizenId = '' or InsuredCitizenId is null )
+	 
+
+--==== End
+
+
+--===== Update when InsuredBirthday &  InsuredGender
+UPDATE  #Result
+SET 
+	InsuredGender = (
+					  case when isnull(#Result.ins_sex,'') ='' then 
+					  			case  when isnull(prf2.flag_sex,'N')='N' then 
+								  	'M'  
+								  else 
+								  	prf2.flag_sex  
+								end 
+					   else case  when isnull( #Result.ins_sex ,'N')='N' then 
+					   				'M' 
+								  else 
+								  	#Result.ins_sex  
+							end 
+					  end
+					)
+FROM centerdb.dbo.prefix prf2   WITH(NOLOCK)
+								
+where #Result.ins_prefix = prf2.prefix_code AND
+(
+	#Result.ClassSub in ('0601','0602','0604')
+)
+
+
+UPDATE  #Result
+SET 
+	InsuredBirthday  =  NULL							
+where
+#Result.ClassSub not in ('0601','0602','0604')
+
+--- 76329
+select * from #Result where #Result.ClassSub in ('0601','0602','0604') and  InsuredBirthday is null --14084
+
+select * from #Result where #Result.ClassSub in ('0601','0602','0604') and  InsuredBirthday is not null --62281
+--=== Update Beneficiary
+--select * from his_beneficiary   WITH(NOLOCK) where pol_yr = 13 and pol_br = 006 and pol_pre = 520 and pol_no = '000035' and endos_seq = '0' and ins_seq=1
+
+UPDATE #Result
+SET Beneficiary1= (
+				case when isnull(bnf.bnf_fname,'') ='' or charindex( 'ทายาทโดยธรรม',bnf.bnf_fname  ,1 )> 0  or  charindex( 'ทายาทตามกฏหมาย' ,bnf.bnf_fname ,1 )> 0  then 'ทายาทโดยธรรม'  
+					else  isnull(prf3.prefix_name,'') + case when isnull(prf3.flag_space,11) = 'Y' then ' ' else '' end + bnf.bnf_fname +' ' + bnf.bnf_lname 
+				end
+				), 
+RelationInsuredBeneficiary1= (
+								case when  isnull(bnf.bnf_fname,'') ='' or charindex('ทายาทโดยธรรม' , bnf.bnf_fname ,1 )> 0  or  charindex('ทายาทตามกฏหมาย' , bnf.bnf_fname ,1 )> 0  then '99' 
+									else centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','', bnf.bnf_relationship) 
+								end
+							), 
+NumOfPerson= CONVERT(int,
+					(
+						case  when isnull(#Result.flag_group,'') ='G' and charindex('ตามรายการแนบ',#Result.ins_fname ,1) > 0 
+								then (
+										select count(ins_seq) 
+										from his_insured i 
+										where #Result.PolEnd_Yr = i.pol_yr and #Result.PolEnd_Br = i.pol_br and #Result.PolEnd_Pre = i.pol_pre and #Result.PolEnd_No = i.pol_no  and #Result.endos_seq = i.endos_seq
+									)
+							else  1 
+						end
+					)
+				)
+
+FROM  his_beneficiary bnf   WITH(NOLOCK)
+left join centerdb.dbo.prefix prf3   WITH(NOLOCK) on 
+							prf3.prefix_code = bnf.bnf_prefix
+
+WHERE 
+	#Result.PolEnd_Yr = bnf.pol_yr and
+	#Result.PolEnd_Br = bnf.pol_br and
+	#Result.PolEnd_Pre = bnf.pol_pre and
+	#Result.PolEnd_No = bnf.pol_no and
+	#Result.endos_seq = bnf.endos_seq  and
+	#Result.ins_seq = bnf.ins_seq and
+		bnf.bnf_seq in (
+						select min (bnf_seq) from his_beneficiary  where 
+						#Result.PolEnd_Yr = pol_yr and
+						#Result.PolEnd_Br = pol_br and
+						#Result.PolEnd_Pre = pol_pre and
+						#Result.PolEnd_No = pol_no and
+						#Result.endos_seq = endos_seq  and
+						#Result.ins_seq = ins_seq  
+					)
+
+select * from #Result
+--== End Benificialry
 --===== Update when OccupationLevel h.ClassSub '0601','0602','0603','0604'
-select distinct ins_position_level from his_insured
+--select distinct ins_position_level from his_insured
 
-UPDATE  #Result
-SET OccupationLevel = ltrim(rtrim(isnull( ins_position_level,'')))
+--UPDATE  #Result
+--SET OccupationLevel = ltrim(rtrim(isnull( ins_position_level,'')))
 
-UPDATE  #Result
-SET OccupationLevel	= '01'
-where OccupationLevel = '' or OccupationLevel = '0'
+--UPDATE  #Result
+--SET OccupationLevel	= '01'
+--where OccupationLevel = '' or OccupationLevel = '0'
 
 UPDATE  #Result
 SET OccupationLevel = (
@@ -443,97 +557,101 @@ where
 	#Result.ClassSub in ('0601','0602','0603','0604')
 )
 --===== End Update OccupationLevel
---===== Update when InsuredBirthday &  InsuredGender
-UPDATE  #Result
-SET 
-	InsuredGender = (
-					  case when isnull(#Result.ins_sex,'') ='' then 
-					  			case  when isnull(prf2.flag_sex,'N')='N' then 
-								  	'M'  
-								  else 
-								  	prf2.flag_sex  
-								end 
-					   else case  when isnull( #Result.ins_sex ,'N')='N' then 
-					   				'M' 
-								  else 
-								  	ins.ins_sex  
-							end 
-					  end
-					)
-FROM centerdb.dbo.prefix prf2 
-								
-where #Result.ins_prefix = prf2.prefix_code AND
-(
-	#tempPolicy.ClassSub in ('0601','0602','0604')
-)
 
---=== Update Beneficiary
-UPDATE #Result
-SET Beneficiary1= (
-				case when isnull(bnf.bnf_fname,'') ='' or charindex( 'ทายาทโดยธรรม',bnf.bnf_fname  ,1 )> 0  or  charindex( 'ทายาทตามกฏหมาย' ,bnf.bnf_fname ,1 )> 0  then 'ทายาทโดยธรรม'  
-					else  isnull(prf3.prefix_name,'') + case when isnull(prf3.flag_space,11) = 'Y' then ' ' else '' end + bnf.bnf_fname +' ' + bnf.bnf_lname 
-				end
-				)+'|', 
-RelationInsuredBeneficiary1= (
-								case when  isnull(bnf.bnf_fname,'') ='' or charindex('ทายาทโดยธรรม' , bnf.bnf_fname ,1 )> 0  or  charindex('ทายาทตามกฏหมาย' , bnf.bnf_fname ,1 )> 0  then '99' 
-									else centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','', bnf.bnf_relationship) 
-								end
-							)+'|', 
-NumOfPerson= cast(
-					(
-						case  when isnull(h.flag_group,'') ='G' and charindex('ตามรายการแนบ',ins.ins_fname ,1) > 0 
-								then (
-										select count(ins_seq) 
-										from his_insured i 
-										where h.pol_yr = i.pol_yr and h.pol_br = i.pol_br and h.pol_pre = i.pol_pre and h.pol_no = i.pol_no  and h.endos_seq = i.endos_seq
-									)
-							else  1 
-						end
-					) as varchar(20) 
-				)+'|',
-
-FROM  his_beneficiary bnf 
-left join centerdb.dbo.prefix prf3 on 
-							prf3.prefix_code = bnf.bnf_prefix
-
-WHERE 
-	#Result.pol_yr = bnf.pol_yr and
-	#Result.pol_br = bnf.pol_br and
-	#Result.pol_pre = bnf.pol_pre and
-	#Result.pol_no = bnf.pol_no and
-	#Result.endos_seq = bnf.endos_seq  and
-	#Result.ins_seq = bnf.ins_seq and
-		bnf.bnf_seq in (
-						select min (bnf_seq) from his_beneficiary  where 
-						#Result.pol_yr = pol_yr and
-						#Result.pol_br = pol_br and
-						#Result.pol_pre = pol_pre and
-						#Result.pol_no = pol_no and
-						#Result.endos_seq = endos_seq  and
-						#Result.ins_seq = ins_seq  
-					)
-
---== End Benificialry
-
-
--- Update Seq,RelationHolderInsured
-UPDATE #Result
-SET 
-OccupationCode= isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')
+--=== UPDATE OccupationCode
 
 UPDATE  #Result
-SET 
-OccupationCode=  (
-					case when isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999') =  '' then 
-							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position',position_name ,''),'9999')
-						else  
-							  isnull(centerdb.dbo.cnudf_GetMasterOic('','position','',position ),'9999')  
-					end
-				)
+SET OccupationCode = isnull(centerdb.dbo.cnudf_GetMasterOic2('','position','',#Result.position ),'9999')
+where position_name is not null 
+
+UPDATE #Result
+SET OccupationCode = isnull(centerdb.dbo.cnudf_GetMasterOic2('','position',#Result.position_name ,''),'9999')
+WHERE OccupationCode = '9999'
+
+UPDATE #Result
+SET OccupationCode = '9999'
+WHERE OccupationCode is null or OccupationCode = ''
+
+select * from #Result where OccupationCode != '9999'
+
+--=== End Update OccupationCode
+--=== UPDATE Address
+UPDATE #Result
+SET InsuredCountryCode = centerdb.dbo.cnudf_GetMasterOic('','country','' ,#Result.country)  
 
 
-select * from #Result
-select isnull(centerdb.dbo.cnudf_GetMasterOic('','position','','30116' ),'9999')
+UPDATE #Result
+SET InsuredAddress = Ltrim(
+												(CASE isnull(addno, '')    WHEN ''  THEN '' ElSE addno+' ' END) + 
+			       								 (CASE isnull(building, '') WHEN ''  THEN '' ELSE building+' Bld., ' END) + 
+												 (CASE isnull(village, '')  WHEN ''  THEN '' ELSE village+' village, ' END) + 
+												 (CASE isnull(street, '')   WHEN ''  THEN '' ELSE street+' Rd., ' END) + 
+												 (CASE isnull(trog, '')     WHEN ''  THEN '' ELSE trog+', ' END) + 
+												(CASE isnull(soi, '')      WHEN ''  THEN '' ELSE soi+', ' END)
+											)
+where flag_language  = 'E'
+
+
+UPDATE #Result
+SET InsuredAddress =  Ltrim(
+										(CASE isnull(addno, '') WHEN 	'-' THEN '' WHEN 	'' THEN ''  ELSE 'เลขที่ '  + addno END)
+									  +(CASE isnull(building, '') WHEN '' THEN '' ELSE ' ' + building END) 
+									  +(CASE isnull(village, '') WHEN '' THEN '' ELSE ' ' + village END) 
+									  +(CASE isnull(street, '') WHEN '' THEN '' ELSE ' ถ.' + street END) 
+									  +(CASE isnull(trog, '') WHEN '' THEN '' ELSE ' ตรอก' + trog END) 
+									  + (CASE isnull(soi, '') WHEN '' THEN '' ELSE ' ซ.' + soi END)
+									) 
+where InsuredAddress is null and country = '764'
+
+
+UPDATE #Result
+SET InsuredAddress = Ltrim(
+										 (CASE isnull(addno, '') WHEN '' THEN '' ELSE addno END) 
+										 + (CASE isnull(building, '') WHEN '' THEN '' ELSE '  ' + building END) 
+										 + (CASE isnull(village, '')  WHEN '' THEN '' ELSE '  ' + village END) 
+										 + (CASE isnull(street, '') WHEN '' THEN '' ELSE '  ' + street END) 
+										 + (CASE isnull(trog, '') WHEN '' THEN '' ELSE '  ' + trog END) 
+										 + (CASE isnull(soi, '')  WHEN '' THEN '' ELSE '  ' + soi END)
+									)  	
+where InsuredAddress is null 
+
+
+select * from  #Result
+--UPDATE #Result
+--SET InsuredAddress = (
+--						CASE flag_language  When 'E' then
+--									Ltrim(
+--												(CASE isnull(addno, '')    WHEN ''  THEN '' ElSE addno+' ' END) + 
+--			       								 (CASE isnull(building, '') WHEN ''  THEN '' ELSE building+' Bld., ' END) + 
+--												 (CASE isnull(village, '')  WHEN ''  THEN '' ELSE village+' village, ' END) + 
+--												 (CASE isnull(street, '')   WHEN ''  THEN '' ELSE street+' Rd., ' END) + 
+--												 (CASE isnull(trog, '')     WHEN ''  THEN '' ELSE trog+', ' END) + 
+--												(CASE isnull(soi, '')      WHEN ''  THEN '' ELSE soi+', ' END)
+--											)
+--						ELSE 
+						
+--							CASE country WHEN '764' THEN 
+--									 Ltrim(
+--										(CASE isnull(addno, '') WHEN 	'-' THEN '' WHEN 	'' THEN ''  ELSE 'เลขที่ '  + addno END)
+--									  +(CASE isnull(building, '') WHEN '' THEN '' ELSE ' ' + building END) 
+--									  +(CASE isnull(village, '') WHEN '' THEN '' ELSE ' ' + village END) 
+--									  +(CASE isnull(street, '') WHEN '' THEN '' ELSE ' ถ.' + street END) 
+--									  +(CASE isnull(trog, '') WHEN '' THEN '' ELSE ' ตรอก' + trog END) 
+--									  + (CASE isnull(soi, '') WHEN '' THEN '' ELSE ' ซ.' + soi END)
+--									) 
+--							ELSE
+--										Ltrim(
+--										 (CASE isnull(addno, '') WHEN '' THEN '' ELSE addno END) 
+--										 + (CASE isnull(building, '') WHEN '' THEN '' ELSE '  ' + building END) 
+--										 + (CASE isnull(village, '')  WHEN '' THEN '' ELSE '  ' + village END) 
+--										 + (CASE isnull(street, '') WHEN '' THEN '' ELSE '  ' + street END) 
+--										 + (CASE isnull(trog, '') WHEN '' THEN '' ELSE '  ' + trog END) 
+--										 + (CASE isnull(soi, '')  WHEN '' THEN '' ELSE '  ' + soi END)
+--									)  		
+
+--					 )
+
+--=== End Update Address
 
 --================== Endosement ==============================
 
