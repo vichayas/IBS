@@ -11,8 +11,8 @@ GO
  --drop table #tmpPrefix
 
 Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
-set	@StartDateFrom ='2014/01/01'
-set @StartDateTo = '2014/01/31'
+set	@StartDateFrom ='2017/06/01'
+set @StartDateTo = '2017/06/30'
 set @BranchFrom = '000'
 set @BranchTo = '709'
 set @TrDateFrom = null 
@@ -160,6 +160,7 @@ and h.pol_br  >= @BranchFrom
 and h.pol_br  <= @BranchTo
 and h.endos_seq = 0  
 and (( convert(varchar(10) , h.start_datetime ,111 ) between  @StartDateFrom  and @StartDateTo))
+AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','591','592')
 
 --select * from #tempPolicy
 
@@ -595,7 +596,7 @@ SET NumOfPerson= CONVERT(int,
 
 --=== End Update Address
 
---================== Endosement ==============================
+--================== Endorsement ==============================
 --drop table #tempEndorse
 --Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
 --set	@StartDateFrom ='2014/01/01'
@@ -640,6 +641,8 @@ WHERE  e.approve_datetime is not null
 and c.class_oic in ('06','07','11')  
 and ( (e.eff_date is null)  or ( e.eff_date between  @StartDateFrom  and @StartDateTo))
 and e.app_br BETWEEN @BranchFrom AND  @BranchTo
+AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','591','592')
+
 --and  ( (e.approve_datetime is null) or (convert(varchar(10) ,e.approve_datetime ,111 ) between  @TrDateFrom  and @TrDateTo))
 
 CREATE UNIQUE CLUSTERED INDEX i_tempEndorse
@@ -925,6 +928,8 @@ left join endos_insured ins WITH(NOLOCK) on
 								p.app_no = ins.app_no 
 							)
 where p.IsPolicy = 0 and p.PolEnd_Yr is null and p.PolEnd_Br is null
+
+delete  #Result where IsPolicy = 0 and PolEnd_Yr is null and PolEnd_Br is null
 
 UPDATE #Result
 SET NumOfPerson= CONVERT(int,
@@ -1310,8 +1315,8 @@ select CompanyCode+
 		Seq  +'|'+
 		InsuredName +'|'+
 		InsuredAddress  +'|'+
-		InsuredProvinceDistrictSub  +'|'+
-		InsuredZipCode +'|'+
+		IsNULL(InsuredProvinceDistrictSub,SUBSTRING(InsuredZipCode,1,2)+'0000')  +'|'+
+		IsNULL(InsuredZipCode,'00000') +'|'+
 		InsuredCountryCode  +'|'+
 		InsuredCitizenId  +'|'+
 		IsNULL(OccupationLevel,'')  +'|'+
@@ -1327,6 +1332,39 @@ select CompanyCode+
 		ReferenceNumber 
  from #Result
  order by IsPolicy DESC, PolicyNumber,EndorsementNumber, Seq ASC
+
+
+ SELECT *
+ FROM 
+ (
+	select (CompanyCode+
+		MainClass+'|'+
+		SubClass+'|'+
+		PolicyNumber+'|'+
+		EndorsementNumber +'|'+
+		Seq  +'|'+
+		InsuredName +'|'+
+		InsuredAddress  +'|'+
+		IsNULL(InsuredProvinceDistrictSub,SUBSTRING(InsuredZipCode,1,2)+'0000')  +'|'+
+		IsNULL(InsuredZipCode,'00000') +'|'+
+		InsuredCountryCode  +'|'+
+		InsuredCitizenId  +'|'+
+		IsNULL(OccupationLevel,'')  +'|'+
+		OccupationCode  +'|'+
+		IsNULL(InsuredBirthday,'-')  +'|'+
+		IsNULL(InsuredGender,'UNDEFINE')  +'|'+
+		IsNULL(RelationHolderInsured,'13')  +'|'+
+		IsNULL(Beneficiary1,'UNDEFINE')  +'|'+
+		IsNULL(RelationInsuredBeneficiary1,'13')  +'|'+
+		Rtrim(Convert(char(7),NumOfPerson))  +'|'+
+		PremiumAmt  +'|'+
+		TransactionStatus +'|'+ 
+		ReferenceNumber ) as Name
+ from #Result
+ ) a
+ where a.Name is  null
+
+ select * from #Result where Seq is null
 
  
 drop table #tempPolicy
