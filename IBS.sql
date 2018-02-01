@@ -10,10 +10,17 @@ GO
  --drop table #CountryMapping
  --drop table #tmpPrefix
 
+
+
 Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
 set	@StartDateFrom ='2017/06/01'
+<<<<<<< HEAD
 set @StartDateTo = '2017/06/30'
 set @BranchFrom = '000'
+=======
+set @StartDateTo = CONVERT(char(10),DATEADD(d, -1, DATEADD(m, DATEDIFF(m, 0, @StartDateFrom) + 1, 0)),111) 
+set @BranchFrom = '560'
+>>>>>>> master
 set @BranchTo = '709'
 set @TrDateFrom = null 
 set @TrDateTo = NULL
@@ -598,9 +605,10 @@ SET NumOfPerson= CONVERT(int,
 
 --================== Endorsement ==============================
 --drop table #tempEndorse
+
 --Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
---set	@StartDateFrom ='2014/01/01'
---set @StartDateTo = '2014/01/31'
+--set	@StartDateFrom ='2017/06/01'
+--set @StartDateTo = '2017/06/30'
 --set @BranchFrom = '000'
 --set @BranchTo = '709'
 --set @TrDateFrom = null 
@@ -1334,10 +1342,18 @@ select CompanyCode+
  order by IsPolicy DESC, PolicyNumber,EndorsementNumber, Seq ASC
 
 
+<<<<<<< HEAD
  SELECT *
  FROM 
  (
 	select (CompanyCode+
+=======
+ select
+ *
+ from 
+ (
+ select (CompanyCode+
+>>>>>>> master
 		MainClass+'|'+
 		SubClass+'|'+
 		PolicyNumber+'|'+
@@ -1348,7 +1364,11 @@ select CompanyCode+
 		IsNULL(InsuredProvinceDistrictSub,SUBSTRING(InsuredZipCode,1,2)+'0000')  +'|'+
 		IsNULL(InsuredZipCode,'00000') +'|'+
 		InsuredCountryCode  +'|'+
+<<<<<<< HEAD
 		InsuredCitizenId  +'|'+
+=======
+		IsNULL(InsuredCitizenId,'UNDEFINE')  +'|'+ --waiting for confirmation 2015
+>>>>>>> master
 		IsNULL(OccupationLevel,'')  +'|'+
 		OccupationCode  +'|'+
 		IsNULL(InsuredBirthday,'-')  +'|'+
@@ -1361,12 +1381,21 @@ select CompanyCode+
 		TransactionStatus +'|'+ 
 		ReferenceNumber ) as Name
  from #Result
+<<<<<<< HEAD
  ) a
  where a.Name is  null
 
  select * from #Result where Seq is null
 
+=======
+ ) as a
+ where a.Name is null
+>>>>>>> master
  
+ select * from #Result where InsuredCitizenId is null
+ --SELECT * FROM #Result where POLEND_yr='16' and pol_br='181' and pol_pre='569' and pol_no in ('230213','540096')
+
+
 drop table #tempPolicy
 drop table #tempEndorse --drop table #tempPolInsured
 --drop table #Result
