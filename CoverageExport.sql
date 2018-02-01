@@ -44,16 +44,19 @@ set @BranchTo = '709'
 set @TrDateFrom = null
 set @TrDateTo = null
 
-set @YEARNO =  @YEARNO_17
+set @YEARNO =  @YEARNO_15
 set @MonthNDayStart = '/06/01'
-set @MonthNDayEnd = '/06/30'
+--set @MonthNDayEnd = '/06/30'
 set	@StartDateFrom ='20' + @YEARNO + @MonthNDayStart
-set @StartDateTo = '20' + @YEARNO + @MonthNDayEnd
+--set @StartDateTo = '20' + @YEARNO + @MonthNDayEnd
 
 DECLARE @pol_yr_start DATETIME;
 SET @pol_yr_start = convert(datetime , '20' + @YEARNO + @MonthNDayStart ,121 )
 DECLARE @pol_yr_end DATETIME;
-set @pol_yr_end = convert(datetime , '20' + @YEARNO + @MonthNDayEnd ,121 )
+set @pol_yr_end = convert(datetime , DATEADD(s,-1,DATEADD(mm, DATEDIFF(m,0, @pol_yr_start )+1,0))  , 121 )
+
+--select @pol_yr_start
+--select @pol_yr_end
 
 ----- ===========================
 
@@ -230,12 +233,12 @@ AND start_date between @pol_yr_start and @pol_yr_end
 
 PRINT 'INSERT INTO #tempPolicyCO '
 INSERT INTO #tempPolicyCO
-SELECT  h.pol_yr , h.pol_br, h.pol_pre ,h.pol_no , h.endos_seq  , h.net_premium , h.stamp , h.vat ,h.tax ,h.total_premium , 
+SELECT   h.pol_yr , h.pol_br, h.pol_pre ,h.pol_no , h.endos_seq  , h.net_premium , h.stamp , h.vat ,h.tax ,h.total_premium , 
 h.start_date ,h.end_date ,h.sale_code , h.flag_language ,c.flag_group , h.tr_datetime , c.class_oic, c.subclass_oic
 from ibs_pol h  with (nolock)
 inner join centerdb.dbo.subclass c on h.pol_pre = c.class_code + c.subclass_code and isnull(c.flag_mixpolicy,'') <> 'Y'
 where c.class_oic in ('06','07','11')   and  h.endos_seq = 0  
-and ( (@StartDateFrom is null)  or ( @StartDateFrom is not null  and convert(varchar(10) , h.start_datetime ,111 ) between  @StartDateFrom  and @StartDateTo))
+and ( @pol_yr_start is not null and  h.start_datetime between  @pol_yr_start  and @pol_yr_end)
 and h.pol_br  between @BranchFrom  and @BranchTo
 --AND h.pol_br NOT IN ( @BranchFrom,  @BranchTo )
 --and  ( (@TrDateFrom is null) or (@TrDateFrom is not null  and  convert(varchar(10) , h.tr_datetime ,111 ) between  @TrDateFrom  and @TrDateTo))
@@ -306,7 +309,8 @@ e.pol_Yr BETWEEN @YEARNO_12 AND @YEARNO_18 and
 e.pol_yr = h.pol_yr and e.pol_br = h.pol_br and e.app_pre = h.pol_pre and e.pol_no = h.pol_no
 inner join centerdb.dbo.subclass c on e.app_pre = c.class_code + c.subclass_code and isnull(c.flag_mixpolicy,'') <> 'Y'
 where c.class_oic in ('06','07','11')  and e.approve_datetime is not null 
-and ( (@StartDateFrom is null)  or ( @StartDateFrom is not null  and convert(varchar(10) , e.eff_date	 ,111 ) between  @StartDateFrom  and @StartDateTo))
+and ( @pol_yr_start is not null and  e.eff_date between  @pol_yr_start  and @pol_yr_end)
+--and ( (@StartDateFrom is null)  or ( @StartDateFrom is not null  and convert(varchar(10) , e.eff_date	 ,111 ) between  @StartDateFrom  and @StartDateTo))
 and e.app_br  between @BranchFrom  and @BranchTo
 --AND e.app_br NOT IN ( @BranchFrom,  @BranchTo )
 and  ( (@TrDateFrom is null) or (@TrDateFrom is not null  and  convert(varchar(10) ,e.approve_datetime ,111 ) between  @TrDateFrom  and @TrDateTo))
@@ -1322,6 +1326,128 @@ CREATE TABLE #TMP_FINAL_RESULT(
 	ReferenceNumber VARCHAR(20)
 )
 
+--==================================== PREPARE ENDORSE =============================
+SELECT h.*, datas.ins_seq
+INTO #TMP_ENDORSE_BEFORE
+FROM
+(
+	SELECT e.* FROM
+	(
+		SELECT e.* from 
+		(
+			SELECT e.*, EndorseSeq = (
+					select cast(count(endos_no) as varchar(5)) 
+					from #tempEndorseCO 
+					where 
+					pol_yr = e2.pol_yr and 
+					pol_br = e2.pol_br and 
+					app_pre = e2.app_pre and 
+					pol_no = e2.pol_no and 
+					endos_yr + endos_no <= e2.endos_yr + e2.endos_no and approve_datetime is not null
+					)
+			FROM 
+			#tempEndorseCO e INNER JOIN #tempEndorseCO e2
+			ON 
+			e.app_yr = e2.app_yr and 
+			e.app_br = e2.app_br and 
+			e.app_pre = e2.app_pre and 
+			e.app_no = e2.app_no
+		) AS  e
+		WHERE e.approve_datetime is not null 
+	) AS e
+
+	LEFT JOIN his_insured (nolock)
+	ON his_insured.pol_yr = e.pol_yr
+	and his_insured.pol_br = e.pol_br
+	and his_insured.pol_pre = e.pol_pre
+	and his_insured.pol_no = e.pol_no
+	and his_insured.endos_seq = e.EndorseSeq
+
+) AS h
+
+INNER JOIN 
+--select * from 
+(
+	 SELECT h.* FROM
+	 (
+		select Customer_WhoIn_EndosInsured.pol_yr, Customer_WhoIn_EndosInsured.pol_br, Customer_WhoIn_EndosInsured.pol_pre, 
+		Customer_WhoIn_EndosInsured.pol_no, Customer_WhoIn_EndosInsured.flag_group, Customer_WhoIn_EndosInsured.endos_group,
+		endosInsureResult.app_yr, endosInsureResult.app_no, endosInsureResult.app_br, endosInsureResult.app_pre, endosInsureResult.ins_seq
+		from  #tempEndorseCO Customer_WhoIn_EndosInsured
+		LEFT JOIN 
+		( 
+			select h.app_yr, h.app_br, h.app_pre, h.app_no, endos_ins.ins_seq
+			from #tempEndorseCO h
+			inner join endos_insured endos_ins  on -- pol_insured
+			h.app_yr = endos_ins.app_yr and
+			h.app_br = endos_ins.app_br and
+			h.app_pre = endos_ins.app_pre and
+			h.app_no = endos_ins.app_no 
+		) as endosInsureResult
+		on  Customer_WhoIn_EndosInsured.app_yr	= endosInsureResult.app_yr and
+			Customer_WhoIn_EndosInsured.app_br	= endosInsureResult.app_br and
+			Customer_WhoIn_EndosInsured.app_pre = endosInsureResult.app_pre and
+			Customer_WhoIn_EndosInsured.app_no	= endosInsureResult.app_no 
+		where endosInsureResult.app_yr IS NOT NULL
+		and
+		(
+			( Customer_WhoIn_EndosInsured.flag_group = 'G' and  endosInsureResult.ins_seq in (select ins_seq from endos_insured where endos_insured.app_yr = Customer_WhoIn_EndosInsured.app_yr and endos_insured.app_br = Customer_WhoIn_EndosInsured.app_br and endos_insured.app_pre = Customer_WhoIn_EndosInsured.app_pre and endos_insured.app_no = Customer_WhoIn_EndosInsured.app_no))
+			or
+			(isnull(Customer_WhoIn_EndosInsured.flag_group,'I') ='I' and endosInsureResult.ins_seq in (select ins_seq from pol_insured where pol_insured.pol_yr = Customer_WhoIn_EndosInsured.pol_yr and pol_insured.pol_br = Customer_WhoIn_EndosInsured.app_br and pol_insured.pol_pre = Customer_WhoIn_EndosInsured.app_pre and pol_insured.pol_no = Customer_WhoIn_EndosInsured.pol_no))
+			or
+			(endosInsureResult.ins_seq in (select ins_seq from pol_insured where pol_insured.pol_yr = Customer_WhoIn_EndosInsured.pol_yr and pol_insured.pol_br = Customer_WhoIn_EndosInsured.app_br and pol_insured.pol_pre = Customer_WhoIn_EndosInsured.app_pre and pol_insured.pol_no = Customer_WhoIn_EndosInsured.pol_no and Customer_WhoIn_EndosInsured.endos_group in ('3','4') ))
+		)
+		
+	 ) AS h
+
+	UNION
+
+	SELECT h.*, ins.ins_seq FROM
+	(
+		select Customer_WhoNotIn_EndosInsured.pol_yr, Customer_WhoNotIn_EndosInsured.pol_br, Customer_WhoNotIn_EndosInsured.pol_pre, 
+		Customer_WhoNotIn_EndosInsured.pol_no, Customer_WhoNotIn_EndosInsured.flag_group, Customer_WhoNotIn_EndosInsured.endos_group,
+		Customer_WhoNotIn_EndosInsured.app_yr, Customer_WhoNotIn_EndosInsured.app_no, Customer_WhoNotIn_EndosInsured.app_br, Customer_WhoNotIn_EndosInsured.app_pre
+		from  #tempEndorseCO Customer_WhoNotIn_EndosInsured
+		LEFT JOIN 
+		( 
+			select h.app_yr, h.app_br, h.app_pre, h.app_no
+			from #tempEndorseCO h
+			inner join endos_insured endos_ins  on
+			h.app_yr = endos_ins.app_yr and
+			h.app_br = endos_ins.app_br and
+			h.app_pre = endos_ins.app_pre and
+			h.app_no = endos_ins.app_no 
+		) as endosInsureResult
+		on  Customer_WhoNotIn_EndosInsured.app_yr	= endosInsureResult.app_yr and
+			Customer_WhoNotIn_EndosInsured.app_br	= endosInsureResult.app_br and
+			Customer_WhoNotIn_EndosInsured.app_pre = endosInsureResult.app_pre and
+			Customer_WhoNotIn_EndosInsured.app_no	= endosInsureResult.app_no 
+		where endosInsureResult.app_yr IS NULL
+	) AS h
+	inner join pol_insured ins  on
+	h.pol_yr = ins.pol_yr and
+	h.app_br = ins.pol_br and
+	h.app_pre = ins.pol_pre and
+	h.pol_no = ins.pol_no
+	and
+	(
+		( h.flag_group = 'G' and  ins.ins_seq in (select ins_seq from endos_insured 
+												where endos_insured.app_yr = h.app_yr 
+												and endos_insured.app_br = h.app_br 
+												and endos_insured.app_pre = h.app_pre 
+												and endos_insured.app_no = h.app_no))
+		or
+		( isnull(h.flag_group,'I') = 'I' )
+		or
+		( h.endos_group in ('3','4') )
+	)
+
+) AS datas
+ON  h.pol_yr	= datas.pol_yr and
+	h.app_br	= datas.pol_br and
+	h.app_pre	= datas.pol_pre and
+	h.pol_no	= datas.pol_no 
+
 /******************SELECT DATA **********************/ --$$$
 /******************SELECT DATA **********************/ --$$$
 /******************SELECT DATA **********************/ --$$$
@@ -1337,7 +1463,6 @@ delete #TMP_FINAL_RESULT
 -- (@1)
 
 INSERT INTO #TMP_FINAL_RESULT
-
 SELECT GroupA.CompanyCode , GroupA.MainClass, GroupA.SubClass, GroupA.PolicyNumber, GroupA.EndorsementNumber, GroupA.InsuredSeq, GroupA.CoverageCode, GroupA.CoverageCode2
 , SumInsuredAmt		= cast(convert(decimal(20,0), SUM(GroupA.SumInsuredAmt)	    ) as varchar(20)) +'|'
 , SumInsuredPerDay	= cast(convert(decimal(20,0), SUM(GroupA.SumInsuredPerDay)  ) as varchar(20)) +'|' 
@@ -1415,28 +1540,8 @@ and
 	)
 )
 
-
 ) AS GroupA
 GROUP BY GroupA.CompanyCode , GroupA.MainClass, GroupA.SubClass, GroupA.PolicyNumber, GroupA.EndorsementNumber, GroupA.InsuredSeq, GroupA.CoverageCode, GroupA.CoverageCode2
-
-
-
-
---delete #TMP_FINAL_RESULT
-
---select * from #TMP_FINAL_RESULT
---where PolicyNumber = '14741-17100/POL/000443-533|'
---group by CoverageCode , CoverageCode2
---having count(CoverageCode) > 1
-
---select PolicyNumber from #TMP_FINAL_RESULT
-----where CoverageCode = '|PA999|'
-----and CoverageCode2 = 'P00010|'
---group by PolicyNumber 
---having count(PolicyNumber) > 1
-
--- June 2013 00:18 total 31 568 records
---UNION
 
 -- (@2)
 
@@ -1461,7 +1566,7 @@ SubClass =    case  h.app_pre when '506' then (select top 1 case  country_code_t
 		else  h.subclass_oic end  +'|', 
 PolicyNumber		= h.sale_code + '-' + h.pol_yr+h.pol_br + '/POL/' + h.pol_no + '-' + h.app_pre + '|', 
 EndorsementNumber	=     h.endos_yr + h.app_br +'/END/' + h.endos_no + '-' + h.app_pre + '|'
-, InsuredSeq		= datas.ins_seq 
+, InsuredSeq		= h.ins_seq 
 , CoverageCode		= '|' +  case when cd.add_cover_seq IS NULL then tc.oic_main_code else 
 							 ISNULL(( select top 1  o.oic_main_code
 								from [#tmp_tab_cover_insurance_oic] o  where
@@ -1479,108 +1584,14 @@ EndorsementNumber	=     h.endos_yr + h.app_br +'/END/' + h.endos_no + '-' + h.ap
 , CoPayment			= '0'
 , NumOfDays			= case when cd.itm_time IS NULL and t.cover_limit_unit IS NULL  then '0' else convert(decimal(20,0), cd.itm_sumins_amt) end
 
-from #tempEndorseCO h inner join  --endos
--- endos e on 
---h.pol_yr = e.pol_yr and h.pol_br = e.pol_br and h.app_pre = e.app_pre and h.pol_no = e.pol_no
---and h.endos_yr =  e.endos_yr and h.endos_no = e.endos_no
-
-?????
-inner join his_insured hisInsured on
-hisInsured.
-
-endos_detail  ed on
-h.app_yr = ed.app_yr and h.app_br = ed.app_br and h.app_pre = ed.app_pre and h.app_no = ed.app_no and 
-ed.seq_no in ( select min(seq_no) from endos_detail 
-				where h.app_yr = app_yr and h.app_br = app_br 
-				and  h.app_pre = app_pre and h.app_no = app_no)
-INNER JOIN 
-(
-	 SELECT h.* FROM
-	 (
-		select Customer_WhoIn_EndosInsured.pol_yr, Customer_WhoIn_EndosInsured.pol_br, Customer_WhoIn_EndosInsured.pol_pre, 
-		Customer_WhoIn_EndosInsured.pol_no, Customer_WhoIn_EndosInsured.flag_group, Customer_WhoIn_EndosInsured.endos_group,
-		endosInsureResult.app_yr, endosInsureResult.app_no, endosInsureResult.app_br, endosInsureResult.app_pre, endosInsureResult.ins_seq
-		from  #tempEndorseCO Customer_WhoIn_EndosInsured
-		LEFT JOIN 
-		( 
-			select h.app_yr, h.app_br, h.app_pre, h.app_no, endos_ins.ins_seq
-			from #tempEndorseCO h
-			inner join endos_insured endos_ins  on -- pol_insured
-			h.app_yr = endos_ins.app_yr and
-			h.app_br = endos_ins.app_br and
-			h.app_pre = endos_ins.app_pre and
-			h.app_no = endos_ins.app_no 
-		) as endosInsureResult
-		on  Customer_WhoIn_EndosInsured.app_yr	= endosInsureResult.app_yr and
-			Customer_WhoIn_EndosInsured.app_br	= endosInsureResult.app_br and
-			Customer_WhoIn_EndosInsured.app_pre = endosInsureResult.app_pre and
-			Customer_WhoIn_EndosInsured.app_no	= endosInsureResult.app_no 
-		where endosInsureResult.app_yr IS NOT NULL
-		and
-		(
-			( Customer_WhoIn_EndosInsured.flag_group = 'G' and  endosInsureResult.ins_seq in (select ins_seq from endos_insured where endos_insured.app_yr = Customer_WhoIn_EndosInsured.app_yr and endos_insured.app_br = Customer_WhoIn_EndosInsured.app_br and endos_insured.app_pre = Customer_WhoIn_EndosInsured.app_pre and endos_insured.app_no = Customer_WhoIn_EndosInsured.app_no))
-			or
-			(isnull(Customer_WhoIn_EndosInsured.flag_group,'I') ='I' and endosInsureResult.ins_seq in (select ins_seq from pol_insured where pol_insured.pol_yr = Customer_WhoIn_EndosInsured.pol_yr and pol_insured.pol_br = Customer_WhoIn_EndosInsured.app_br and pol_insured.pol_pre = Customer_WhoIn_EndosInsured.app_pre and pol_insured.pol_no = Customer_WhoIn_EndosInsured.pol_no))
-			or
-			(endosInsureResult.ins_seq in (select ins_seq from pol_insured where pol_insured.pol_yr = Customer_WhoIn_EndosInsured.pol_yr and pol_insured.pol_br = Customer_WhoIn_EndosInsured.app_br and pol_insured.pol_pre = Customer_WhoIn_EndosInsured.app_pre and pol_insured.pol_no = Customer_WhoIn_EndosInsured.pol_no and Customer_WhoIn_EndosInsured.endos_group in ('3','4') ))
-		)
-		
-	 ) AS h
-
-	UNION
-
-	SELECT h.*, ins.ins_seq FROM
-	(
-		select Customer_WhoNotIn_EndosInsured.pol_yr, Customer_WhoNotIn_EndosInsured.pol_br, Customer_WhoNotIn_EndosInsured.pol_pre, 
-		Customer_WhoNotIn_EndosInsured.pol_no, Customer_WhoNotIn_EndosInsured.flag_group, Customer_WhoNotIn_EndosInsured.endos_group,
-		Customer_WhoNotIn_EndosInsured.app_yr, Customer_WhoNotIn_EndosInsured.app_no, Customer_WhoNotIn_EndosInsured.app_br, Customer_WhoNotIn_EndosInsured.app_pre
-		from  #tempEndorseCO Customer_WhoNotIn_EndosInsured
-		LEFT JOIN 
-		( 
-			select h.app_yr, h.app_br, h.app_pre, h.app_no
-			from #tempEndorseCO h
-			inner join endos_insured endos_ins  on
-			h.app_yr = endos_ins.app_yr and
-			h.app_br = endos_ins.app_br and
-			h.app_pre = endos_ins.app_pre and
-			h.app_no = endos_ins.app_no 
-		) as endosInsureResult
-		on  Customer_WhoNotIn_EndosInsured.app_yr	= endosInsureResult.app_yr and
-			Customer_WhoNotIn_EndosInsured.app_br	= endosInsureResult.app_br and
-			Customer_WhoNotIn_EndosInsured.app_pre = endosInsureResult.app_pre and
-			Customer_WhoNotIn_EndosInsured.app_no	= endosInsureResult.app_no 
-		where endosInsureResult.app_yr IS NULL
-	) AS h
-	inner join pol_insured ins  on
-	h.pol_yr = ins.pol_yr and
-	h.app_br = ins.pol_br and
-	h.app_pre = ins.pol_pre and
-	h.pol_no = ins.pol_no
-	and
-	(
-		( h.flag_group = 'G' and  ins.ins_seq in (select ins_seq from endos_insured 
-												where endos_insured.app_yr = h.app_yr 
-												and endos_insured.app_br = h.app_br 
-												and endos_insured.app_pre = h.app_pre 
-												and endos_insured.app_no = h.app_no))
-		or
-		( isnull(h.flag_group,'I') = 'I' )
-		or
-		( h.endos_group in ('3','4') )
-	)
-
-) AS datas
-ON h.pol_yr = datas.pol_yr and
-	h.app_br = datas.pol_br and
-	h.app_pre = datas.pol_pre and
-	h.pol_no = datas.pol_no
+FROM #TMP_ENDORSE_BEFORE h
 
 inner join pol_cover_insurance_detail  cd on
 h.pol_yr = cd.pol_yr and
 h.pol_br = cd.pol_br and
 h.app_pre = cd.pol_pre and
 h.pol_no = cd.pol_no and
-datas.ins_seq = cd.ins_seq 
+h.ins_seq = cd.ins_seq 
 
 inner join  [#tmp_tab_cover_insurance_oic] tc on
 cd.pol_pre = tc.class_code+tc.subclass_code and
@@ -1602,12 +1613,6 @@ and
 
 ) AS GroupB
 GROUP BY GroupB.CompanyCode , GroupB.MainClass, GroupB.SubClass, GroupB.PolicyNumber, GroupB.EndorsementNumber, GroupB.InsuredSeq, GroupB.CoverageCode, GroupB.CoverageCode2
-
---inner join centerdb.dbo.subclass c on h.app_pre = c.class_code+ c.subclass_code and isnull(c.flag_mixpolicy,'') <> 'Y'
-
---select app_no, app_pre, app_br, app_yr from #tempEndorseCO
---group by app_no, app_pre, app_br, app_yr 
---having count(app_no) > 1
 
 
 --======
@@ -1639,175 +1644,125 @@ GROUP BY GroupB.CompanyCode , GroupB.MainClass, GroupB.SubClass, GroupB.PolicyNu
 --select * from #TMP_FINAL_RESULT
 --where PolicyNumber = '00584-17100/POL/000432-533|'
 
+--================================== VALIDATION ==================================
+
 --select PolicyNumber, CoverageCode , CoverageCode2 from #TMP_FINAL_RESULT
 --group by PolicyNumber , CoverageCode , CoverageCode2
 --having count(PolicyNumber) > 1
 
+--================================================================================
+
 --UNION
 
 -- (@3)
+
 IF ( SELECT COUNT(1) FROM #TempResult ) > 0 
 BEGIN
 
 INSERT INTO #TMP_FINAL_RESULT
-SELECT   '2037|' as CompanyCode , 
-MainClass	= t.class_oic +'|', 
-SubClass	=  case  h.pol_pre when '506' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from his_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no and endos_seq = h.endos_seq /*order by journey_seq asc*/) 
-			    when '516' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from his_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no and endos_seq = h.endos_seq /*order by journey_seq  asc*/) 
-				else  t.subclass_oic end  +'|',
-PolicyNumber		= h.sale_code + '-' + h.pol_yr + h.pol_br + '/POL/' + h.pol_no + '-' + h.pol_pre + '|',
-EndorsementNumber	= '' +'|'
-, InsuredSeq		= ins.ins_seq
-, CoverageCode		= '|' +cd.oic_main_code+'|'
-, CoverageCode2		= cd.oic_code+'|'
-, SumInsuredAmt		= cast(convert(decimal(20,0),cd.sumins_amt) as varchar(20)) +'|'
-, SumInsuredPerDay	= '0|'
-, SumInsuredPerTimes= case   when cd.oic_main_code  = 'TA002'  then  cast(convert(decimal(20,0),cd.sumins_amt) as varchar(20)) else '0' end +'|'
-, PremiumPerCover	= cast(convert(decimal(15,2),cd.net_premium) as varchar(15)) +'|'
-, DeductibleAmt		=  '0|'
-, DeductibleText	= '' +'|'
-, CoPayment			=  '0|'
-, NumOfDays			=  '0|'--case   when cd.oic_code  = 'PA00053'   then    cd.sumins_amt  else 0 end  
-, TransactionStatus	= 'N' +'|'
-, ReferenceNumber	= '' 
-FROM #tempPolicyCO  t inner join ibs_pol h  on
-t.pol_yr = h.pol_yr and t.pol_br = h.pol_br and t.pol_pre = h.pol_pre and t.pol_no = h.pol_no and t.endos_seq =  h.endos_seq 
---inner join centerdb.dbo.subclass c on h.pol_pre = c.class_code+ c.subclass_code and isnull(c.flag_mixpolicy,'') <> 'Y'
+SELECT GroupC.CompanyCode , GroupC.MainClass, GroupC.SubClass, GroupC.PolicyNumber, GroupC.EndorsementNumber, GroupC.InsuredSeq, GroupC.CoverageCode, GroupC.CoverageCode2
+	, SumInsuredAmt		= cast(convert(decimal(20,0), SUM(SumInsuredAmt))		as varchar(20)) +'|'
+	, SumInsuredPerDay	= '0|'
+	, SumInsuredPerTimes= cast(convert(decimal(20,0), SUM(SumInsuredPerTimes))	as varchar(20)) +'|'
+	, PremiumPerCover	= cast(convert(decimal(15,2), SUM(PremiumPerCover))		as varchar(15)) +'|'
+	, DeductibleAmt		=  '0|'
+	, DeductibleText	=   '|'
+	, CoPayment			=  '0|'
+	, NumOfDays			=  '0|'--case   when cd.oic_code  = 'PA00053'   then    cd.sumins_amt  else 0 end  
+	, TransactionStatus	=  'N|'
+	, ReferenceNumber	= '' 
+FROM
+(
 
-inner join his_insured ins  on
-h.pol_yr = ins.pol_yr and
-h.pol_br = ins.pol_br and
-h.pol_pre = ins.pol_pre and
-h.pol_no = ins.pol_no and
-h.endos_seq = ins.endos_seq 
+	SELECT   '2037|' as CompanyCode , 
+	MainClass	= t.class_oic +'|', 
+	SubClass	=  case  h.pol_pre when '506' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from his_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no and endos_seq = h.endos_seq /*order by journey_seq asc*/) 
+					when '516' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from his_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no and endos_seq = h.endos_seq /*order by journey_seq  asc*/) 
+					else  t.subclass_oic end  +'|',
+	PolicyNumber		= h.sale_code + '-' + h.pol_yr + h.pol_br + '/POL/' + h.pol_no + '-' + h.pol_pre + '|'
+	, EndorsementNumber	= '' +'|'
+	, InsuredSeq		= ins.ins_seq
+	, CoverageCode		= '|' +cd.oic_main_code+'|'
+	, CoverageCode2		= cd.oic_code+'|'
+	, SumInsuredAmt		= cd.sumins_amt
+	--, SumInsuredPerDay	= 0
+	, SumInsuredPerTimes= case   when cd.oic_main_code  = 'TA002'  then  cd.sumins_amt else '0' end
+	, PremiumPerCover	= cd.net_premium
 
-inner join  #TempResult  cd on --$$
-ins.pol_yr = cd.pol_yr and
-ins.pol_br = cd.pol_br and
-ins.pol_pre = cd.pol_pre and
-ins.pol_no = cd.pol_no and
-ins.ins_seq = cd.ins_seq 
-where 1=1
---c.class_oic in ('06','07','11')
-and h.endos_seq = 0   
+	FROM #tempPolicyCO  t inner join ibs_pol h  on
+	t.pol_yr = h.pol_yr and t.pol_br = h.pol_br and t.pol_pre = h.pol_pre and t.pol_no = h.pol_no and t.endos_seq =  h.endos_seq 
+	--inner join centerdb.dbo.subclass c on h.pol_pre = c.class_code+ c.subclass_code and isnull(c.flag_mixpolicy,'') <> 'Y'
 
+	inner join his_insured ins  on
+	h.pol_yr = ins.pol_yr and
+	h.pol_br = ins.pol_br and
+	h.pol_pre = ins.pol_pre and
+	h.pol_no = ins.pol_no and
+	h.endos_seq = ins.endos_seq 
+
+	inner join  #TempResult  cd on --$$
+	ins.pol_yr = cd.pol_yr and
+	ins.pol_br = cd.pol_br and
+	ins.pol_pre = cd.pol_pre and
+	ins.pol_no = cd.pol_no and
+	ins.ins_seq = cd.ins_seq 
+	where 1=1
+	--c.class_oic in ('06','07','11')
+	and h.endos_seq = 0 
+) AS GroupC 
+GROUP BY GroupC.CompanyCode , GroupC.MainClass, GroupC.SubClass, GroupC.PolicyNumber, GroupC.EndorsementNumber, GroupC.InsuredSeq, GroupC.CoverageCode, GroupC.CoverageCode2
 
 --UNION
 
 -- (@4)
 
+
 INSERT INTO #TMP_FINAL_RESULT
-SELECT   '2037|' as CompanyCode , 
-MainClass	=  t.class_oic +'|', 
-SubClass	=  case  h.pol_pre when '506' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no /*order by journey_seq asc*/) 
-								when '516' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no  /*order by journey_seq  asc*/) 
-		else  t.subclass_oic end  +'|'
-, PolicyNumber		= h.sale_code + '-' + h.pol_yr + h.pol_br + '/POL/' + h.pol_no + '-' + h.pol_pre + '|'
-, EndorsementNumber	= t.endos_yr+t.app_br +'/END/' + t.endos_no + '-' + t.app_pre  + '|'
-, InsuredSeq		= datas.ins_seq 
-, CoverageCode		= '|' +cd.oic_main_code +'|'
-, CoverageCode2		= cd.oic_code +'|'
-, SumInsuredAmt		= cast(convert(decimal(20,0),cd.sumins_amt) as varchar(20)) +'|'
-, SumInsuredPerDay	= '0|'
-, SumInsuredPerTimes= case   when cd.oic_main_code  = 'TA002'  then  cast(convert(decimal(20,0),cd.sumins_amt) as varchar(20)) else '0' end +'|'
-, PremiumPerCover	= cast(convert(decimal(15,2), cd.net_premium) as varchar(20)) +'|'
-, DeductibleAmt		=  '0|'
-, DeductibleText	= '' +'|'
-, CoPayment			=  '0|'
-, NumOfDays			=  '0|' --  case   when cd.oic_code  = 'PA00053'   then    cd.sumins_amt  else 0 end 
-, TransactionStatus	= 'N' +'|'
-, ReferenceNumber	= '' 
---select endos_ins.ins_addno, ins.ins_addno
-from #tempEndorseCO  t  --  endose
-INNER JOIN policy h  on
-t.pol_yr = h.pol_yr and t.pol_br = h.pol_br and t.app_pre = h.pol_pre and t.pol_no = h.pol_no 
-INNER JOIN 
+SELECT GroupD.CompanyCode , GroupD.MainClass, GroupD.SubClass, GroupD.PolicyNumber, GroupD.EndorsementNumber, GroupD.InsuredSeq, GroupD.CoverageCode, GroupD.CoverageCode2
+	, SumInsuredAmt		= cast(convert(decimal(20,0), SUM(SumInsuredAmt) )		as varchar(20)) +'|'
+	, SumInsuredPerDay	= '0|'
+	, SumInsuredPerTimes= cast(convert(decimal(20,0), SUM(SumInsuredPerTimes))	as varchar(20)) +'|'
+	, PremiumPerCover	= cast(convert(decimal(15,2), SUM(PremiumPerCover))		as varchar(20)) +'|'
+	, DeductibleAmt		=  '0|'
+	, DeductibleText	=   '|'
+	, CoPayment			=  '0|'
+	, NumOfDays			=  '0|' --  case   when cd.oic_code  = 'PA00053'   then    cd.sumins_amt  else 0 end 
+	, TransactionStatus	=  'N|'
+	, ReferenceNumber	=  '' 
+FROM
 (
-	SELECT h.* FROM
-	(
-		select Customer_WhoIn_EndosInsured.pol_yr, Customer_WhoIn_EndosInsured.pol_br, Customer_WhoIn_EndosInsured.pol_pre, 
-		Customer_WhoIn_EndosInsured.pol_no, Customer_WhoIn_EndosInsured.flag_group, Customer_WhoIn_EndosInsured.endos_group,
-		endosInsureResult.app_yr, endosInsureResult.app_no, endosInsureResult.app_br,endosInsureResult.app_pre, endosInsureResult.ins_seq
-		from  #tempEndorseCO Customer_WhoIn_EndosInsured
-		LEFT JOIN 
-		( 
-			select h.app_yr, h.app_br, h.app_pre, h.app_no, endos_ins.ins_seq
-			from #tempEndorseCO h
-			inner join endos_insured endos_ins  on -- pol_insured
-			h.app_yr = endos_ins.app_yr and
-			h.app_br = endos_ins.app_br and
-			h.app_pre = endos_ins.app_pre and
-			h.app_no = endos_ins.app_no 
-		) as endosInsureResult
-		on  Customer_WhoIn_EndosInsured.app_yr	= endosInsureResult.app_yr and
-			Customer_WhoIn_EndosInsured.app_br	= endosInsureResult.app_br and
-			Customer_WhoIn_EndosInsured.app_pre = endosInsureResult.app_pre and
-			Customer_WhoIn_EndosInsured.app_no	= endosInsureResult.app_no 
-		where endosInsureResult.app_yr IS NOT NULL
-		and
-		(
-			--( Customer_WhoIn_EndosInsured.flag_group = 'G')
-			--or
-			( Customer_WhoIn_EndosInsured.flag_group = 'G' and  endosInsureResult.ins_seq in (select ins_seq from endos_insured 
-																				where endos_insured.app_yr = Customer_WhoIn_EndosInsured.app_yr and endos_insured.app_br = Customer_WhoIn_EndosInsured.app_br 
-																				and endos_insured.app_pre = Customer_WhoIn_EndosInsured.app_pre and endos_insured.app_no = Customer_WhoIn_EndosInsured.app_no))
-			or
-			(isnull(Customer_WhoIn_EndosInsured.flag_group,'I') ='I' and endosInsureResult.ins_seq in (select ins_seq from pol_insured where pol_insured.pol_yr = Customer_WhoIn_EndosInsured.pol_yr and pol_insured.pol_br = Customer_WhoIn_EndosInsured.app_br and pol_insured.pol_pre = Customer_WhoIn_EndosInsured.app_pre and pol_insured.pol_no = Customer_WhoIn_EndosInsured.pol_no))
-			or
-			(endosInsureResult.ins_seq in (select ins_seq from pol_insured where pol_insured.pol_yr = Customer_WhoIn_EndosInsured.pol_yr and pol_insured.pol_br = Customer_WhoIn_EndosInsured.app_br and pol_insured.pol_pre = Customer_WhoIn_EndosInsured.app_pre and pol_insured.pol_no = Customer_WhoIn_EndosInsured.pol_no and Customer_WhoIn_EndosInsured.endos_group in ('3','4') ))
-		)
+	SELECT   '2037|' as CompanyCode , 
+	MainClass	=  t.class_oic +'|', 
+	SubClass	=  case  h.pol_pre when '506' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no /*order by journey_seq asc*/) 
+									when '516' then (select top 1 case  country_code_to when '764' then   '06' else '08' end from pol_journey_ta where pol_yr = h.pol_yr and pol_br = h.pol_br and pol_pre = h.pol_pre and pol_no = h.pol_no  /*order by journey_seq  asc*/) 
+			else  t.subclass_oic end  +'|'
+	, PolicyNumber		= h.sale_code + '-' + h.pol_yr + h.pol_br + '/POL/' + h.pol_no + '-' + h.pol_pre + '|'
+	, EndorsementNumber	= t.endos_yr+t.app_br +'/END/' + t.endos_no + '-' + t.app_pre  + '|'
+	, InsuredSeq		= t.ins_seq 
+	, CoverageCode		= '|' +cd.oic_main_code +'|'
+	, CoverageCode2		= cd.oic_code +'|'
 
-	) AS h
+	, SumInsuredAmt		= convert(decimal(20,0),cd.sumins_amt)
+	, SumInsuredPerDay	= 0
+	, SumInsuredPerTimes= case   when cd.oic_main_code  = 'TA002'  then  convert(decimal(20,0),cd.sumins_amt)  else 0 end
+	, PremiumPerCover	= convert(decimal(15,2), cd.net_premium)
 
-	UNION
+	FROM #TMP_ENDORSE_BEFORE  t  --  endose
 
-	SELECT h.*, ins.ins_seq FROM
-	(
-		select Customer_WhoNotIn_EndosInsured.pol_yr, Customer_WhoNotIn_EndosInsured.pol_br, Customer_WhoNotIn_EndosInsured.pol_pre, 
-		Customer_WhoNotIn_EndosInsured.pol_no, Customer_WhoNotIn_EndosInsured.flag_group, Customer_WhoNotIn_EndosInsured.endos_group,
-		Customer_WhoNotIn_EndosInsured.app_yr, Customer_WhoNotIn_EndosInsured.app_no, Customer_WhoNotIn_EndosInsured.app_br, Customer_WhoNotIn_EndosInsured.app_pre
-		from  #tempEndorseCO Customer_WhoNotIn_EndosInsured
-		LEFT JOIN 
-		( 
-			select h.app_yr, h.app_br, h.app_pre, h.app_no
-			from #tempEndorseCO h
-			inner join endos_insured endos_ins  on
-			h.app_yr = endos_ins.app_yr and
-			h.app_br = endos_ins.app_br and
-			h.app_pre = endos_ins.app_pre and
-			h.app_no = endos_ins.app_no 
-		) as endosInsureResult
-		on  Customer_WhoNotIn_EndosInsured.app_yr	= endosInsureResult.app_yr and
-			Customer_WhoNotIn_EndosInsured.app_br	= endosInsureResult.app_br and
-			Customer_WhoNotIn_EndosInsured.app_pre = endosInsureResult.app_pre and
-			Customer_WhoNotIn_EndosInsured.app_no	= endosInsureResult.app_no 
-		where endosInsureResult.app_yr IS NULL
-	) AS h
-	inner join pol_insured ins  on
-	h.pol_yr = ins.pol_yr and
-	h.app_br = ins.pol_br and
-	h.app_pre = ins.pol_pre and
-	h.pol_no = ins.pol_no
-	and
-	(
-		( h.flag_group = 'G' and  ins.ins_seq in (select ins_seq from endos_insured where endos_insured.app_yr = h.app_yr and endos_insured.app_br = h.app_br and endos_insured.app_pre = h.app_pre and endos_insured.app_no = h.app_no))
-		or
-		( isnull(h.flag_group,'I') = 'I' )
-		or
-		( h.endos_group in ('3','4') )
-	)
+	INNER JOIN policy h  on
+	t.pol_yr = h.pol_yr and t.pol_br = h.pol_br and t.app_pre = h.pol_pre and t.pol_no = h.pol_no 
 
-) AS datas
-ON  t.pol_yr = datas.pol_yr and
-	t.app_br = datas.pol_br and
-	t.app_pre = datas.pol_pre and
-	t.pol_no = datas.pol_no
-inner join  #TempResult  cd on
-datas.pol_yr = cd.pol_yr and
-datas.pol_br = cd.pol_br and
-datas.pol_pre = cd.pol_pre and
-datas.pol_no = cd.pol_no and
-datas.ins_seq = cd.ins_seq 
+
+	inner join  #TempResult  cd on
+	t.pol_yr = cd.pol_yr and
+	t.pol_br = cd.pol_br and
+	t.pol_pre = cd.pol_pre and
+	t.pol_no = cd.pol_no and
+	t.ins_seq = cd.ins_seq 
+
+) AS GroupD 
+GROUP BY GroupD.CompanyCode , GroupD.MainClass, GroupD.SubClass, GroupD.PolicyNumber, GroupD.EndorsementNumber, GroupD.InsuredSeq, GroupD.CoverageCode, GroupD.CoverageCode2
+
 
 END
 
@@ -1815,12 +1770,13 @@ END
 
 select * from #TMP_FINAL_RESULT
 order by  EndorsementNumber , PolicyNumber , InsuredSeq, CoverageCode
+
 --=========================================================================
 --select top 100 * from #tempEndorseCO
 --select top 100 * from #TempResult
 
-select * from #TMP_FINAL_RESULT
-where PolicyNumber like '03654-17502%'
+--select * from #TMP_FINAL_RESULT
+--where PolicyNumber like '03654-17502%'
 
 --========================= For Check : Duplicate =========================
 --		select PolicyNumber, CoverageCode, CoverageCode2 from #TMP_FINAL_RESULT
@@ -1840,11 +1796,11 @@ where PolicyNumber like '03654-17502%'
 
 --SELECT * FROM #TMP_HIS_COVER_PA
 --SELECT * FROM #TMP_POL_COVER_PA
-SELECT * FROM #tempPolicyCO
-Where pol_no = '000006'
-and pol_yr = 17
---and pol_br = '100'
-and pol_pre = '533'
+--SELECT * FROM #tempPolicyCO
+--Where pol_no = '000006'
+--and pol_yr = 17
+----and pol_br = '100'
+--and pol_pre = '533'
 
 
 --select * from #tempEndorseCO
