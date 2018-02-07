@@ -386,7 +386,7 @@ where
 --=== Update the data for Undefined data
 UPDATE #Result
 SET	InsuredCitizenId = 'UNDEFINE'
-WHERE  CONVERT(int,LEFT([start_date],4)) <= 2015 and
+WHERE  --CONVERT(int,LEFT([start_date],4)) <= 2015 and
 (InsuredCitizenId = '' or InsuredCitizenId is null )
 	 
 
@@ -418,11 +418,11 @@ where #Result.ins_prefix = prf2.prefix_code AND
 )
 
 --== Update InsuredBirthday
-UPDATE  #Result
-SET 
-	InsuredBirthday  =  NULL							
-where
-#Result.ClassSub not in ('0601','0602','0604')
+-- UPDATE  #Result
+-- SET 
+-- 	InsuredBirthday  =  NULL							
+-- where
+-- #Result.ClassSub not in ('0601','0602','0604')
 
 ----- 76329
 --select * from #Result where #Result.ClassSub in ('0601','0602','0604') and  InsuredBirthday is null --14084
@@ -636,13 +636,21 @@ e.flag_language , c.class_code, c.subclass_oic, c.class_oic + c.subclass_oic AS 
 INTO #tempEndorse
 FROM endos e  
 inner join ibs_pol h  on e.pol_yr = h.pol_yr and e.pol_br = h.pol_br and e.app_pre = h.pol_pre and e.pol_no = h.pol_no
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 inner join centerdb.dbo.subclass c on e.app_pre = c.class_code + c.subclass_code --and isnull(c.flag_mixpolicy,'') <> 'Y'
 WHERE  e.approve_datetime is not null 
 and c.class_oic in ('06','07','11')  
 and ( (e.eff_date is null)  or ( e.eff_date between  @StartDateFrom  and @StartDateTo))
 and e.app_br BETWEEN @BranchFrom AND  @BranchTo
+<<<<<<< Updated upstream
 AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','592')
 
+=======
+and e.approve_datetime is not null
+>>>>>>> Stashed changes
 --and  ( (e.approve_datetime is null) or (convert(varchar(10) ,e.approve_datetime ,111 ) between  @TrDateFrom  and @TrDateTo))
 
 --select top 2 app_yr,app_br,app_pre,app_no from endos_detail where app_yr > '12' and app_pre ='112' group by app_yr,app_br,app_pre,app_no having count(1) > 1
@@ -1094,7 +1102,7 @@ where
 print 'Updating  endorse InsuredCitizenId ...'
 UPDATE #Result
 SET	InsuredCitizenId = 'UNDEFINE'
-WHERE  CONVERT(int,LEFT([start_date],4)) <= 2015 and
+WHERE  --CONVERT(int,LEFT([start_date],4)) <= 2015 and
 #Result.IsPolicy = 0 and
 (InsuredCitizenId = '' or InsuredCitizenId is null )
 	 
@@ -1129,13 +1137,13 @@ where #Result.ins_prefix = prf2.prefix_code AND
 )
 
 --== Update InsuredBirthday
-print 'Updating  endorse InsuredBirthday ...'
-UPDATE  #Result
-SET 
-	InsuredBirthday  =  NULL							
-where
-#Result.ClassSub not in ('0601','0602','0604') and
-#Result.IsPolicy = 0 
+-- print 'Updating  endorse InsuredBirthday ...'
+-- UPDATE  #Result
+-- SET 
+-- 	InsuredBirthday  =  NULL							
+-- where
+-- #Result.ClassSub not in ('0601','0602','0604') and
+-- #Result.IsPolicy = 0 
 
 ----- 76329
 --select * from #Result where #Result.ClassSub in ('0601','0602','0604') and  InsuredBirthday is null --14084
@@ -1345,7 +1353,7 @@ select (CompanyCode+
 
 		IsNULL(OccupationLevel,'')  +'|'+
 		OccupationCode  +'|'+
-		IsNULL(InsuredBirthday,'')  +'|'+
+		IsNULL(InsuredBirthday,'00000000')  +'|'+
 		IsNULL(InsuredGender,'UNDEFINE')  +'|'+
 		IsNULL(RelationHolderInsured,'13')  +'|'+
 		IsNULL(Beneficiary1,'UNDEFINE')  +'|'+
