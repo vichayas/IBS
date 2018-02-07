@@ -2,25 +2,20 @@
 GO
 /****** Object:  StoredProcedure [dbo].[sp_OIC_AH_IS]    Script Date: 4/1/2561 9:09:35 ******/
 
- --drop table #tempPolicy
- --drop table #tempEndorse
- --drop table #tempPolInsured
- --drop table #Result
- --drop table #TumbolMapping
- --drop table #CountryMapping
- --drop table #tmpPrefix
-
+ --  drop table #tempPolicy
+ --  drop table #tempEndorse
+ --  drop table #tempPolInsured
+ --  drop table #Result
+ --  drop table #TumbolMapping
+ --  drop table #CountryMapping
+ --  drop table #tmpPrefix
+ --  drop table #Data_IBS
 
 
 Declare @StartDateFrom char(10) ,  @StartDateTo char(10),@BranchFrom char(3) ,@BranchTo char(3)  , @TrDateFrom  char(10)  , @TrDateTo char(10)
-set	@StartDateFrom ='2017/06/01'
-<<<<<<< HEAD
-set @StartDateTo = '2017/06/30'
-set @BranchFrom = '000'
-=======
+set	@StartDateFrom ='2015/01/01'
 set @StartDateTo = CONVERT(char(10),DATEADD(d, -1, DATEADD(m, DATEDIFF(m, 0, @StartDateFrom) + 1, 0)),111) 
-set @BranchFrom = '560'
->>>>>>> master
+set @BranchFrom = '000'
 set @BranchTo = '709'
 set @TrDateFrom = null 
 set @TrDateTo = NULL
@@ -75,7 +70,7 @@ CREATE TABLE #Result
 		--==== End data for ผู้เอาประกันภัย และผรู้ับผลประโยชน์
 		ClassSub varchar(5),
 		InsuredFullName varchar(200),
-		HolderFullName varchar(200),
+		HolderFullName            varchar(200),
 		IsHisInsuredNull bit DEFAULT 0,
 		IsInVatControl bit DEFAULT 0,
 
@@ -123,6 +118,7 @@ CREATE TABLE #Result
 	   ins_sex char(1),
 	   ins_prefix char(3),
 	   ins_fname varchar(100),
+	   ins_lname varchar(100)
 	);
 
 CREATE CLUSTERED INDEX i_tempResult
@@ -167,7 +163,8 @@ and h.pol_br  >= @BranchFrom
 and h.pol_br  <= @BranchTo
 and h.endos_seq = 0  
 and (( convert(varchar(10) , h.start_datetime ,111 ) between  @StartDateFrom  and @StartDateTo))
-AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','591','592')
+--AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','591','592')
+AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','592')
 
 --select * from #tempPolicy
 
@@ -310,7 +307,7 @@ SET
 		province  = hld.hld_province,
 		RelationHolderInsured = (
 							case  when #Result.InsuredName = hld.hld_fname+hld.hld_lname then '00'  
-								 else  centerdb.dbo.cnudf_GetMasterOic2('AH03','relationship','ผู้เอาประกัน','') 
+								 else  centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','ผู้เอาประกัน','') 
 							end 
 					),
 		IsHisInsuredNull = (
@@ -442,7 +439,7 @@ SET Beneficiary1= (
 				), 
 RelationInsuredBeneficiary1= (
 								case when  isnull(bnf.bnf_fname,'') ='' or charindex('ทายาทโดยธรรม' , bnf.bnf_fname ,1 )> 0  or  charindex('ทายาทตามกฏหมาย' , bnf.bnf_fname ,1 )> 0  then '99' 
-									else centerdb.dbo.cnudf_GetMasterOic2('AH03','relationship','', bnf.bnf_relationship) 
+									else centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','', bnf.bnf_relationship) 
 								end
 							)
 
@@ -492,8 +489,8 @@ where
 --===== End Update OccupationLevel
 
 --=== UPDATE OccupationCode
-select position,  isnull(centerdb.dbo.cnudf_GetMasterOic2(NULL,'position','',position ),'9999')  as oicPositionCode, 
-      position_name, isnull(centerdb.dbo.cnudf_GetMasterOic2(NULL,'position',position_name ,''),'9999')  as oicPositionNameCode
+select position,  isnull(centerdb.dbo.cnudf_GetMasterOic(NULL,'position','',position ),'9999')  as oicPositionCode, 
+      position_name, isnull(centerdb.dbo.cnudf_GetMasterOic(NULL,'position',position_name ,''),'9999')  as oicPositionNameCode
 INTO #OccupationCodeMapping
 from (
 select distinct position,position_name from #Result
@@ -519,7 +516,7 @@ drop table #OccupationCodeMapping
 --=== End Update OccupationCode
 --=== UPDATE Address
 
-select country,  centerdb.dbo.cnudf_GetMasterOic2(NULL,'country','' ,a.country)   as oicCountryCode
+select country,  centerdb.dbo.cnudf_GetMasterOic(NULL,'country','' ,a.country)   as oicCountryCode
 INTO #CountryMapping
 from (
 select distinct country from #Result
@@ -601,6 +598,7 @@ SET NumOfPerson= CONVERT(int,
 					)
 				)
 
+--select distinct PolicyNumber from #Result
 --=== End Update Address
 
 --================== Endorsement ==============================
@@ -638,20 +636,37 @@ e.flag_language , c.class_code, c.subclass_oic, c.class_oic + c.subclass_oic AS 
 INTO #tempEndorse
 FROM endos e  
 inner join ibs_pol h  on e.pol_yr = h.pol_yr and e.pol_br = h.pol_br and e.app_pre = h.pol_pre and e.pol_no = h.pol_no
-inner join endos_detail  ed on
-	e.app_yr		= ed.app_yr 
-	and e.app_br	= ed.app_br 
-	and e.app_pre	= ed.app_pre 
-	and e.app_no	= ed.app_no
-and ed.seq_no in (select min(seq_no) from endos_detail where e.app_yr = app_yr and e.app_br = app_br and  e.app_pre = app_pre and e.app_no = app_no)
 inner join centerdb.dbo.subclass c on e.app_pre = c.class_code + c.subclass_code --and isnull(c.flag_mixpolicy,'') <> 'Y'
 WHERE  e.approve_datetime is not null 
 and c.class_oic in ('06','07','11')  
 and ( (e.eff_date is null)  or ( e.eff_date between  @StartDateFrom  and @StartDateTo))
 and e.app_br BETWEEN @BranchFrom AND  @BranchTo
-AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','591','592')
+AND h.pol_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','592')
 
 --and  ( (e.approve_datetime is null) or (convert(varchar(10) ,e.approve_datetime ,111 ) between  @TrDateFrom  and @TrDateTo))
+
+--select top 2 app_yr,app_br,app_pre,app_no from endos_detail where app_yr > '12' and app_pre ='112' group by app_yr,app_br,app_pre,app_no having count(1) > 1
+
+
+--select top 1000 app_yr,app_br,app_pre,app_no from endos_detail where app_yr > '12' and app_pre in ('579','569','564','564','562','561','539','506','509','510','516','536','537','540','551','552','553','555','560','567','577','580','591','592') 
+--group by app_yr,app_br,app_pre,app_no having count(1) > 1
+
+--select * from endos_detail where app_yr = '13' and app_br = '003' and app_no = '000019' and app_pre = '112'
+--select * from endos_insured where app_yr = '13' and app_br = '003' and app_no = '000019' and app_pre = '112'
+--select * from endos where app_yr = '13' and app_br = '003' and app_no = '000019' and app_pre = '112'
+--select * from pol_receipt where pol_yr = '13' and pol_br = '003' and pol_no = '000198' and pol_pre = '112'
+--select * from his_receipt where pol_yr = '13' and pol_br = '003' and pol_no = '000198' and pol_pre = '112'
+
+
+--select * from endos where app_yr = '15' and app_br = '181' and app_no = '000002' and app_pre = '561'
+
+--select * from endos_insured where app_yr = '15' and app_br = '181' and app_no = '000002' and app_pre = '561'
+
+--select * from endos_insured where app_yr = '15' and app_br = '181' and app_no = '000002' and app_pre = '561'
+
+
+
+--select top 1 * from his_insured 
 
 CREATE UNIQUE CLUSTERED INDEX i_tempEndorse
 ON #tempEndorse (app_yr,app_br,app_pre,app_no);
@@ -994,7 +1009,7 @@ SET
 		province  = hld.hld_province,
 		RelationHolderInsured = (
 							case  when #Result.InsuredName = hld.hld_fname+hld.hld_lname then '00'  
-								 else  centerdb.dbo.cnudf_GetMasterOic2('AH03','relationship','ผู้เอาประกัน','') 
+								 else  centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','ผู้เอาประกัน','') 
 							end 
 					),
 		IsHisInsuredNull = (
@@ -1138,7 +1153,7 @@ SET Beneficiary1= (
 				), 
 RelationInsuredBeneficiary1= (
 								case when  isnull(bnf.bnf_fname,'') ='' or charindex('ทายาทโดยธรรม' , bnf.bnf_fname ,1 )> 0  or  charindex('ทายาทตามกฏหมาย' , bnf.bnf_fname ,1 )> 0  then '99' 
-									else centerdb.dbo.cnudf_GetMasterOic2('AH03','relationship','', bnf.bnf_relationship) 
+									else centerdb.dbo.cnudf_GetMasterOic('AH03','relationship','', bnf.bnf_relationship) 
 								end
 							), 
 NumOfPerson= CONVERT(int,
@@ -1203,8 +1218,8 @@ where
 --===== End Update OccupationLevel
 
 --=== UPDATE OccupationCode
-select position,  isnull(centerdb.dbo.cnudf_GetMasterOic2(NULL,'position','',position ),'9999')  as oicPositionCode, 
-      position_name, isnull(centerdb.dbo.cnudf_GetMasterOic2(NULL,'position',position_name ,''),'9999')  as oicPositionNameCode
+select position,  isnull(centerdb.dbo.cnudf_GetMasterOic(NULL,'position','',position ),'9999')  as oicPositionCode, 
+      position_name, isnull(centerdb.dbo.cnudf_GetMasterOic(NULL,'position',position_name ,''),'9999')  as oicPositionNameCode
 INTO #OccupationCodeMapping2
 from (
 select distinct position,position_name from #Result where #Result.IsPolicy = 0 
@@ -1233,7 +1248,7 @@ drop table #OccupationCodeMapping2
 --=== End Update OccupationCode
 --=== UPDATE Address
 
-select country,  centerdb.dbo.cnudf_GetMasterOic2(NULL,'country','' ,a.country)   as oicCountryCode
+select country,  centerdb.dbo.cnudf_GetMasterOic(NULL,'country','' ,a.country)   as oicCountryCode
 INTO #CountryMapping2
 from (
 select distinct country from #Result where 
@@ -1297,7 +1312,7 @@ from (
 select distinct tumbol,amphur,province from #Result where 
 #Result.IsPolicy = 0 
 ) as a
---select tumbol, centerdb.dbo.cnudf_GetMasterOic2(NULL,'district',a.tumbol ,'') as oicTumbolId
+--select tumbol, centerdb.dbo.cnudf_GetMasterOic(NULL,'district',a.tumbol ,'') as oicTumbolId
 --INTO #TumbolMapping2
 --from (
 --select distinct tumbol from #Result where 
@@ -1315,21 +1330,22 @@ where
 
 drop table #TumbolMapping2
 
-select CompanyCode+
+select (CompanyCode+
 		MainClass+'|'+
 		SubClass+'|'+
 		PolicyNumber+'|'+
 		EndorsementNumber +'|'+
 		Seq  +'|'+
-		InsuredName +'|'+
-		InsuredAddress  +'|'+
+		IsNULL(InsuredName,ISNULL(ins_fname,'-')) +'|'+
+		IsNULL(InsuredAddress,'-')  +'|'+
 		IsNULL(InsuredProvinceDistrictSub,SUBSTRING(InsuredZipCode,1,2)+'0000')  +'|'+
 		IsNULL(InsuredZipCode,'00000') +'|'+
-		InsuredCountryCode  +'|'+
-		InsuredCitizenId  +'|'+
+		IsNULL(InsuredCountryCode,'000')  +'|'+
+		IsNULL(InsuredCitizenId,'UNDEFINE')  +'|'+ --waiting for confirmation 2015
+
 		IsNULL(OccupationLevel,'')  +'|'+
 		OccupationCode  +'|'+
-		IsNULL(InsuredBirthday,'-')  +'|'+
+		IsNULL(InsuredBirthday,'')  +'|'+
 		IsNULL(InsuredGender,'UNDEFINE')  +'|'+
 		IsNULL(RelationHolderInsured,'13')  +'|'+
 		IsNULL(Beneficiary1,'UNDEFINE')  +'|'+
@@ -1337,64 +1353,65 @@ select CompanyCode+
 		Rtrim(Convert(char(7),NumOfPerson))  +'|'+
 		PremiumAmt  +'|'+
 		TransactionStatus +'|'+ 
-		ReferenceNumber 
+		ReferenceNumber ) as Data
+ into #Data_IBS
  from #Result
  order by IsPolicy DESC, PolicyNumber,EndorsementNumber, Seq ASC
 
-
-<<<<<<< HEAD
- SELECT *
- FROM 
- (
-	select (CompanyCode+
-=======
+ 
  select
  *
- from 
+ from
  (
- select (CompanyCode+
->>>>>>> master
-		MainClass+'|'+
-		SubClass+'|'+
-		PolicyNumber+'|'+
-		EndorsementNumber +'|'+
-		Seq  +'|'+
-		InsuredName +'|'+
-		InsuredAddress  +'|'+
-		IsNULL(InsuredProvinceDistrictSub,SUBSTRING(InsuredZipCode,1,2)+'0000')  +'|'+
-		IsNULL(InsuredZipCode,'00000') +'|'+
-		InsuredCountryCode  +'|'+
-<<<<<<< HEAD
-		InsuredCitizenId  +'|'+
-=======
-		IsNULL(InsuredCitizenId,'UNDEFINE')  +'|'+ --waiting for confirmation 2015
->>>>>>> master
-		IsNULL(OccupationLevel,'')  +'|'+
-		OccupationCode  +'|'+
-		IsNULL(InsuredBirthday,'-')  +'|'+
-		IsNULL(InsuredGender,'UNDEFINE')  +'|'+
-		IsNULL(RelationHolderInsured,'13')  +'|'+
-		IsNULL(Beneficiary1,'UNDEFINE')  +'|'+
-		IsNULL(RelationInsuredBeneficiary1,'13')  +'|'+
-		Rtrim(Convert(char(7),NumOfPerson))  +'|'+
-		PremiumAmt  +'|'+
-		TransactionStatus +'|'+ 
-		ReferenceNumber ) as Name
- from #Result
-<<<<<<< HEAD
- ) a
- where a.Name is  null
+    SELECT 'CompanyCode|MainClass|SubClass|PolicyNumber|EndorsementNumber|Seq|InsuredName|InsuredAddress|InsuredProvinceDistrictSub|InsuredZipCode|InsuredCountryCode|InsuredCitizenId|OccupationLevel|OccupationCode|InsuredBirthday|InsuredGender|RelationHolderInsured|Beneficiary1|RelationInsuredBeneficiary1|NumOfPerson|PremiumAmt|TransactionStatus|ReferenceNumber' as Data
+	UNION
+	SELECT * from #Data_IBS
+  ) as a
+  order by a.Data DESC
+  
+  --delete #Data_IBS
+ --select distinct PolicyNumber from #Result
 
- select * from #Result where Seq is null
 
-=======
- ) as a
- where a.Name is null
->>>>>>> master
+ --+ISNULL(ins_lname,'-')
+ --select
+ --*
+ --from 
+ --(
+ --select (CompanyCode+
+	--	MainClass+'|'+
+	--	SubClass+'|'+
+	--	PolicyNumber+'|'+
+	--	EndorsementNumber +'|'+
+	--	Seq  +'|'+
+	--	IsNULL(InsuredName,ISNULL(ins_fname,'-')) +'|'+
+	--	IsNULL(InsuredAddress,'-')  +'|'+
+	--	IsNULL(InsuredProvinceDistrictSub,SUBSTRING(InsuredZipCode,1,2)+'0000')  +'|'+
+	--	IsNULL(InsuredZipCode,'00000') +'|'+
+	--	IsNULL(InsuredCountryCode,'000')  +'|'+
+	--	IsNULL(InsuredCitizenId,'UNDEFINE')  +'|'+ --waiting for confirmation 2015
+
+	--	IsNULL(OccupationLevel,'')  +'|'+
+	--	OccupationCode  +'|'+
+	--	IsNULL(InsuredBirthday,'-')  +'|'+
+	--	IsNULL(InsuredGender,'UNDEFINE')  +'|'+
+	--	IsNULL(RelationHolderInsured,'13')  +'|'+
+	--	IsNULL(Beneficiary1,'UNDEFINE')  +'|'+
+	--	IsNULL(RelationInsuredBeneficiary1,'13')  +'|'+
+	--	Rtrim(Convert(char(7),NumOfPerson))  +'|'+
+	--	PremiumAmt  +'|'+
+	--	TransactionStatus +'|'+ 
+	--	ReferenceNumber ) as Name
+ --from #Result
+ --) a
+ --where a.Name is  null
+
+ --select * from #Result where InsuredCountryCode is null
+
  
- select * from #Result where InsuredCitizenId is null
- --SELECT * FROM #Result where POLEND_yr='16' and pol_br='181' and pol_pre='569' and pol_no in ('230213','540096')
-
+ --select * from #Result where InsuredCitizenId is null
+ ----SELECT * FROM #Result where POLEND_yr='16' and pol_br='181' and pol_pre='569' and pol_no in ('230213','540096')
+ --select * from his_insured where pol_yr='15' and pol_br='301' and pol_pre='510' and pol_no='453111'
 
 drop table #tempPolicy
 drop table #tempEndorse --drop table #tempPolInsured
